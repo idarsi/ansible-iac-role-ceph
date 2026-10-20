@@ -85,13 +85,13 @@
 
 - name: "Read existing pools"
   ansible.builtin.command:
-    argv: ["ceph", "osd", "pool", "ls", "--format", "json"]
+    argv: ["cephadm", "shell", "--", "ceph", "osd", "pool", "ls", "--format", "json"]
   register: ceph_pool_list
   changed_when: false
 
 - name: "Read PG count for each declared pool that already exists"
   ansible.builtin.command:
-    argv: ["ceph", "osd", "pool", "get", "{{ iac_resource.name }}", "pg_num", "--format", "json"]
+    argv: ["cephadm", "shell", "--", "ceph", "osd", "pool", "get", "{{ iac_resource.name }}", "pg_num", "--format", "json"]
   register: ceph_pool_properties
   changed_when: false
   loop: "{{ iac_blueprint.ceph.pools | default([]) }}"
@@ -115,13 +115,16 @@
 
 - name: "Read registered ceph hosts"
   ansible.builtin.command:
-    argv: ["ceph", "orch", "host", "ls", "--format", "json"]
+    argv: ["cephadm", "shell", "--", "ceph", "orch", "host", "ls", "--format", "json"]
   register: ceph_host_list
   changed_when: false
 
 - name: "Register declared non-bootstrap Ceph hosts"
   ansible.builtin.command:
     argv:
+      - "cephadm"
+      - "shell"
+      - "--"
       - "ceph"
       - "orch"
       - "host"
@@ -137,7 +140,7 @@
 
 - name: "Wait for each declared host to be registered with the orchestrator"
   ansible.builtin.command:
-    argv: ["ceph", "orch", "host", "ls", "--format", "json"]
+    argv: ["cephadm", "shell", "--", "ceph", "orch", "host", "ls", "--format", "json"]
   register: ceph_registered_hosts
   changed_when: false
   retries: 12
@@ -155,7 +158,7 @@
 # orchestrator's inventory for newly declared OSD hosts.
 - name: "Read orchestrator OSD device inventory before provisioning"
   ansible.builtin.command:
-    argv: ["ceph", "orch", "device", "ls", "--format", "json"]
+    argv: ["cephadm", "shell", "--", "ceph", "orch", "device", "ls", "--format", "json"]
   register: ceph_osd_device_inventory
   changed_when: false
   when:
@@ -190,19 +193,22 @@
 
 - name: "Converge monitor daemon placement"
   ansible.builtin.command:
-    argv: ["ceph", "orch", "apply", "-i", "-"]
+    argv: ["cephadm", "shell", "--", "ceph", "orch", "apply", "-i", "-"]
     stdin: "{{ {'service_type': 'mon', 'placement': {'hosts': iac_blueprint.ceph.monitors}} | to_json }}"
   changed_when: false
 
 - name: "Converge manager daemon placement"
   ansible.builtin.command:
-    argv: ["ceph", "orch", "apply", "-i", "-"]
+    argv: ["cephadm", "shell", "--", "ceph", "orch", "apply", "-i", "-"]
     stdin: "{{ {'service_type': 'mgr', 'placement': {'hosts': iac_blueprint.ceph.monitors}} | to_json }}"
   changed_when: false
 
 - name: "Apply declarative specifications for declared OSD devices"
   ansible.builtin.command:
     argv:
+      - "cephadm"
+      - "shell"
+      - "--"
       - "ceph"
       - "orch"
       - "apply"
@@ -226,6 +232,9 @@
 - name: "Create declared pools"
   ansible.builtin.command:
     argv:
+      - "cephadm"
+      - "shell"
+      - "--"
       - "ceph"
       - "osd"
       - "pool"

@@ -32,6 +32,13 @@
         - path: "/tmp/ceph-mock-state/bin/cephadm"
           content: |
             #!/bin/sh
+            if [ "${1:-}" = shell ]; then
+              shift
+              [ "${1:-}" = -- ] || { echo "missing cephadm shell separator" >&2; exit 2; }
+              shift
+              printf 'cephadm shell -- %s\n' "$*" >> /tmp/ceph-mock-state/ceph-mock.log
+              exec ceph "$@"
+            fi
             case "$*" in
               version) printf 'cephadm version 20.2.4\n' ;;
               '--image quay.io/ceph/ceph:v20.2.4 bootstrap --mon-ip ceph-install-mock --cluster-network 10.20.0.0/24')
