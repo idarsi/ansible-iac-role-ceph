@@ -3,6 +3,7 @@
   hosts: all
   gather_facts: false
   vars:
+    ansible_service_mgr: "mock"
     ansible_facts:
       distribution: "Rocky"
       distribution_major_version: "9"
@@ -33,7 +34,7 @@
             #!/bin/sh
             case "$*" in
               version) printf 'cephadm version 20.2.4\n' ;;
-              'bootstrap --mon-ip ceph-install-mock --cluster-network 10.20.0.0/24 --image quay.io/ceph/ceph:v20.2.4')
+              '--image quay.io/ceph/ceph:v20.2.4 bootstrap --mon-ip ceph-install-mock --cluster-network 10.20.0.0/24')
                 printf 'cephadm %s\n' "$*" >> /tmp/ceph-mock-state/ceph-mock.log
                 grep -qxF ceph-install-mock /tmp/ceph-mock-state/hosts || echo ceph-install-mock >> /tmp/ceph-mock-state/hosts
                 mkdir -p /tmp/ceph-mock-state

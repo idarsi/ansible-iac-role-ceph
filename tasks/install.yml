@@ -21,6 +21,7 @@
     name: "chronyd"
     state: "started"
     enabled: true
+  when: ansible_service_mgr | default("") == "systemd"
 
 - name: "Require a cephadm artifact with a pinned checksum"
   ansible.builtin.assert:
@@ -72,13 +73,13 @@
   ansible.builtin.command:
     argv:
       - "cephadm"
+      - "--image"
+      - "{{ ceph_container_image }}"
       - "bootstrap"
       - "--mon-ip"
       - "{{ hostvars[inventory_hostname].ansible_host }}"
       - "--cluster-network"
       - "{{ iac_blueprint.ceph.cluster_network }}"
-      - "--image"
-      - "{{ ceph_container_image }}"
     creates: "{{ ceph_bootstrap_sentinel }}"
   when: iac_blueprint.ceph.cluster_network is defined
 

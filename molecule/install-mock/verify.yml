@@ -10,7 +10,7 @@
     - name: "Assert exact bootstrap command and submitted service specs" # noqa: yaml[line-length]
       ansible.builtin.assert:
         that:
-          - ceph_mock_log.stdout_lines | select('equalto', 'cephadm bootstrap --mon-ip ceph-install-mock --cluster-network 10.20.0.0/24 --image quay.io/ceph/ceph:v20.2.4') | list | length == 1
+          - ceph_mock_log.stdout_lines | select('equalto', 'cephadm --image quay.io/ceph/ceph:v20.2.4 bootstrap --mon-ip ceph-install-mock --cluster-network 10.20.0.0/24') | list | length == 1
           - ceph_mock_log.stdout_lines | select('equalto', 'spec {"service_type":"mon","placement":{"hosts":["ceph-install-mock","ceph-b","ceph-c"]}}') | list | length == 2
           - ceph_mock_log.stdout_lines | select('equalto', 'spec {"service_type":"mgr","placement":{"hosts":["ceph-install-mock","ceph-b","ceph-c"]}}') | list | length == 2
           - ceph_mock_log.stdout_lines | select('match', '^spec \{"service_type":"osd","service_id":"device_[0-9a-f]{64}","placement":\{"hosts":\["ceph-install-mock"\]\},"spec":\{"data_devices":\{"paths":\["/dev/sdb"\]\}\}\}$') | list | length == 2
