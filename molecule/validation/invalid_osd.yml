@@ -17,3 +17,4 @@
   ansible.builtin.assert:
     that:
       - invalid_osd_result.failed
+      - "'OSDs require unique host/device pairs' in (invalid_osd_result.msg | default(''))"

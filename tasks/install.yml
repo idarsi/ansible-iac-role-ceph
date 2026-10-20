@@ -88,11 +88,13 @@
     stdin: >-
       {{ {
         'service_type': 'osd',
-        'service_id': 'device_' ~ ((item.host ~ '|' ~ item.device) | hash('sha256')),
-        'placement': {'hosts': [item.host]},
-        'spec': {'data_devices': {'paths': [item.device]}}
+        'service_id': iac_ceph_osd_service_id,
+        'placement': {'hosts': [iac_resource.host]},
+        'spec': {'data_devices': {'paths': [iac_resource.device]}}
       } | to_json }}
   loop: "{{ iac_blueprint.ceph.osds | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
   changed_when: false
   when: iac_blueprint.ceph.osds | default([]) | length > 0
 
