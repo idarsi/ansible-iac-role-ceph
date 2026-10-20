@@ -1,0 +1,55 @@
+---
+- name: Verify real Ceph cluster convergence
+  hosts: ceph-a
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Read monitor status
+      ansible.builtin.command:
+        argv: ["ceph", "mon", "dump", "--format", "json"]
+      register: mon_dump
+      changed_when: false
+      retries: 30
+      delay: 10
+      until: mon_dump.rc == 0 and (mon_dump.stdout | from_json).mons | length == 3
+
+    - name: Read manager status
+      ansible.builtin.command:
+        argv: ["ceph", "mgr", "dump", "--format", "json"]
+      register: mgr_dump
+      changed_when: false
+      retries: 30
+      delay: 10
+      until: mgr_dump.rc == 0 and (mgr_dump.stdout | from_json).active_name is defined
+
+    - name: Wait for exactly two OSDs to become up and in
+      ansible.builtin.command:
+        argv: ["ceph", "osd", "stat", "--format", "json"]
+      register: osd_stat
+      changed_when: false
+      retries: 60
+      delay: 10
+      until: osd_stat.rc == 0 and (osd_stat.stdout | from_json).num_up_osds == 2 and (osd_stat.stdout | from_json).num_in_osds == 2
+
+    - name: Verify declared pool exists
+      ansible.builtin.command:
+        argv: ["ceph", "osd", "pool", "ls", "--format", "json"]
+      register: pools
+      changed_when: false
+      retries: 30
+      delay: 10
+      until: pools.rc == 0 and "molecule-integration" in (pools.stdout | from_json)
+
+    - name: Read cluster health
+      ansible.builtin.command:
+        argv: ["ceph", "health", "--format", "json"]
+      register: health
+      changed_when: false
+      retries: 60
+      delay: 10
+      until: health.rc == 0 and (health.stdout | from_json).status != "HEALTH_ERR"
+
+    - name: Assert Ceph reports no health error
+      ansible.builtin.assert:
+        that: (health.stdout | from_json).status in ["HEALTH_OK", "HEALTH_WARN"]
+        fail_msg: "Cluster reached HEALTH_ERR: {{ health.stdout }}"

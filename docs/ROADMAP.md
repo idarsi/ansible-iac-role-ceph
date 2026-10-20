@@ -32,8 +32,9 @@ identify v20.2.4 (released 2026-08-19) as the current stable Tentacle release
 and recommend it. Service-spec and device-availability behavior is based on
 the [Tentacle OSD service documentation](https://docs.ceph.com/en/tentacle/cephadm/services/osd)
 and [cephadm deployment documentation](https://docs.ceph.com/en/tentacle/cephadm/install).
-The role does not perform an OS-repository install: cephadm remains a target
-prerequisite and the pinned image specifies the Ceph daemon version.
+The role installs bootstrap prerequisites and the official cephadm executable
+from the pinned `rpm-20.2.4/el9/noarch/cephadm` source URL on the designated
+bootstrap host. It uses the pinned container image for daemon version selection.
 
 Rocky Linux 9 is retained as intended matrix coverage, but upstream Ceph OS
 compatibility evidence is still insufficient to claim it supported; Rocky 10

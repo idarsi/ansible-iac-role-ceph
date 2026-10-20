@@ -7,6 +7,31 @@
 #
 ###############################################################################
 
+- name: "Install Ceph bootstrap runtime prerequisites"
+  ansible.builtin.package:
+    name:
+      - "podman"
+      - "lvm2"
+      - "chrony"
+      - "python3"
+    state: "present"
+
+- name: "Enable time synchronization for Ceph"
+  ansible.builtin.service:
+    name: "chronyd"
+    state: "started"
+    enabled: true
+
+- name: "Install pinned Ceph Tentacle cephadm bootstrap executable"
+  ansible.builtin.get_url:
+    url: "https://download.ceph.com/rpm-{{ ceph_version }}/el9/noarch/cephadm"
+    dest: "/usr/sbin/cephadm"
+    mode: "0755"
+    owner: "root"
+    group: "root"
+    force: false
+    validate_certs: true
+
 - name: "Require cephadm on bootstrap host"
   ansible.builtin.command:
     argv:

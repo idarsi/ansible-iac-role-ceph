@@ -24,7 +24,7 @@ The role manages:
 
 The role does not manage:
 
-- Ceph/cephadm package installation, repositories, firewall, time sync, or external PKI.
+- Firewall or external PKI.
 - Automated device discovery, disk wiping, upgrades/removal, or a verified functioning HA deployment.
 
 Supported platforms
@@ -57,7 +57,7 @@ Control node
 
 Target host
 
-- Rocky Linux 9 or 10 with a working cephadm/ceph CLI, network connectivity, sudo/root privileges, and a prepared Ceph-compatible environment. Rocky 9's upstream Ceph compatibility is a known evidence gap; Rocky 10 is in the intended matrix but untested.
+- Rocky Linux 9 or 10 with network connectivity and sudo/root privileges. On the bootstrap host, install converges Podman, LVM2, Chrony, Python 3, and the official pinned Tentacle 20.2.4 cephadm executable (download.ceph.com RPM release path for EL9). Rocky 10 compatibility of that upstream EL9 cephadm binary remains unverified.
 - Bootstrap pins the daemon container to `quay.io/ceph/ceph:v20.2.4` (Tentacle), installed cephadm must report a parseable version with major version 20 or newer and matching major version 20.
 - Bootstrap host must have `ansible_host`; cluster network must be provided.
 

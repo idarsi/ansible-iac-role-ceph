@@ -1,0 +1,79 @@
+---
+- name: Guard Ceph KVM lifecycle
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    molecule_config: "{{ lookup('file', lookup('env', 'MOLECULE_FILE')) | from_yaml }}"
+    test_environment: "{{ lookup('env', 'IDARSI_TEST_ENVIRONMENT') }}"
+    ephemeral: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}"
+    scenario_directory: "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') }}"
+  tasks:
+    - name: Require explicit destructive-test authorization
+      ansible.builtin.assert:
+        that:
+          - lookup('env', 'IDARSI_CEPH_KVM_DISPOSABLE') == 'YES_I_WILL_DESTROY_THESE_VMS_AND_DISKS'
+          - test_environment | length > 0
+          - ephemeral | length > 0
+          - molecule_config.platforms | map(attribute='name') | list == ['ceph-a', 'ceph-b', 'ceph-c']
+        fail_msg: "This scenario destroys its isolated guests/disks; set the exact IDARSI_CEPH_KVM_DISPOSABLE acknowledgment."
+
+    - name: Create three guests using the shared KVM lifecycle helper
+      ansible.builtin.command:
+        argv:
+          - "{{ test_environment }}/scripts/kvm-vm"
+          - create
+          - "{{ item.name }}"
+          - "{{ item.install_source }}"
+          - "{{ item.kickstart if item.kickstart.startswith('/') else scenario_directory ~ '/' ~ item.kickstart }}"
+      environment:
+        MOLECULE_EPHEMERAL_DIRECTORY: "{{ ephemeral }}"
+        MOLECULE_SCENARIO_DIRECTORY: "{{ scenario_directory }}"
+        KVM_LIBVIRT_URI: "{{ item.libvirt_uri | default(molecule_config.driver.libvirt_uri | default('qemu:///system')) }}"
+        KVM_NETWORK: "{{ item.network | default('default') }}"
+        KVM_SSH_USER: "{{ item.ssh_user | default('molecule') }}"
+        KVM_IPV4_ADDRESS: "{{ item.ipv4_address | default('') }}"
+        KVM_MEMORY_MB: "{{ item.memory_mb | default(6144) }}"
+        KVM_VCPUS: "{{ item.vcpus | default(2) }}"
+        KVM_DISK_SIZE_GB: "{{ item.disk_size_gb | default(30) }}"
+        KVM_INSTALL_TIMEOUT: "{{ item.install_timeout | default(3600) }}"
+      loop: "{{ molecule_config.platforms }}"
+      loop_control:
+        label: "{{ item.name }}"
+      async: "{{ 2 * (item.install_timeout | default(3600) | int) + 900 }}"
+      poll: 15
+      register: kvm_create
+      changed_when: true
+
+    - name: Write Molecule connection configuration
+      ansible.builtin.copy:
+        content: "# Molecule managed\n---\n{{ kvm_create.results | map(attribute='stdout') | map('from_json') | list | to_nice_yaml(indent=2) }}"
+        dest: "{{ lookup('env', 'MOLECULE_INSTANCE_CONFIG') }}"
+        mode: "0600"
+
+- name: Attach scenario-owned OSD disks
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    disk_suffix: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') | hash('sha256') | truncate(8, true, '') }}"
+  tasks:
+    - name: Create and attach only the two scenario-owned OSD volumes
+      ansible.builtin.shell: |
+        set -euo pipefail
+        for vm in ceph-b ceph-c; do
+          volume="idarsi-ceph-${DISK_SUFFIX}-${vm}-osd.qcow2"
+          domain="molecule-${vm}-${DISK_SUFFIX}"
+          virsh --connect "$LIBVIRT_URI" vol-create-as --pool default "$volume" 20G --format qcow2
+          cat > "${MOLECULE_EPHEMERAL_DIRECTORY}/${vm}-osd.xml" <<EOF
+        <disk type='volume' device='disk'><driver name='qemu' type='qcow2'/><source pool='default' volume='${volume}'/><target dev='vdb' bus='virtio'/></disk>
+        EOF
+          virsh --connect "$LIBVIRT_URI" attach-device "$domain" "${MOLECULE_EPHEMERAL_DIRECTORY}/${vm}-osd.xml" --config --live
+        done
+      args:
+        executable: /bin/bash
+      environment:
+        MOLECULE_EPHEMERAL_DIRECTORY: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}"
+        DISK_SUFFIX: "{{ disk_suffix }}"
+        LIBVIRT_URI: "{{ molecule_config.driver.libvirt_uri | default('qemu:///system') }}"
+      changed_when: true
