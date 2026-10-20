@@ -53,13 +53,14 @@ Requirements
 Control node
 
 - Ansible Core 2.19 or newer
-- None (uses only ansible.builtin)
+- `ansible.posix` collection (pinned to `2.1.0` by the Molecule scenarios; install it on the control node for role use)
 
 Target host
 
 - Rocky Linux 9 or 10 with network connectivity and sudo/root privileges. On the bootstrap host, install converges Podman, LVM2, Chrony, Python 3, and the official pinned Tentacle 20.2.4 cephadm executable (download.ceph.com RPM release path for EL9). Rocky 10 compatibility of that upstream EL9 cephadm binary remains unverified.
 - Bootstrap pins the daemon container to `quay.io/ceph/ceph:v20.2.4` (Tentacle), installed cephadm must report a parseable version with major version 20 or newer and matching major version 20.
 - Bootstrap host must have `ansible_host`; cluster network must be provided.
+- The role passes `ceph.ssh_user` to bootstrap (default: `root`), then installs only the Ceph bootstrap public key (`/etc/ceph/ceph.pub`) for that account on declared monitor and OSD hosts before host registration. The account must have passwordless sudo on each peer; non-root users are supported. The role never reads or distributes the private key.
 
 Blueprint structure
 -------------------
@@ -87,6 +88,7 @@ Top-level blueprint variables
 | cluster_name      | yes               | none          | Cluster name; currently only `ceph` is supported. |
 | monitors          | yes               | none          | Odd-sized list of >=3 inventory hosts; the first host is the designated bootstrap host and must be the only host targeted by install. |
 | cluster_network   | install            | none          | Explicit private cluster CIDR; required for bootstrap. |
+| ssh_user          | no                | `root`        | Existing/role-created SSH account Ceph uses to manage declared peers; must have passwordless sudo. |
 | osds              | no                | []            | Explicit host/device records. A device path must be unique per host; the same path on different hosts is valid. Omitted records do not remove existing OSDs. Hosts are registered from this declaration, so OSD-only inventory hosts are supported. |
 | allow_osd_provisioning | no          | false         | Explicitly permits submission of declared device requests to Ceph's orchestrator. Must be boolean `true` when `osds` is non-empty. It does not establish that disks are safe to use. |
 | pools             | no                | []            | Pools to create, with optional pg_num (default 32). |

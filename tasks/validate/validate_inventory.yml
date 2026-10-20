@@ -39,6 +39,19 @@
       - inventory_hostname in iac_blueprint.ceph.monitors
     fail_msg: "ceph.monitors must be a unique odd-sized list of at least three inventory hosts including the current bootstrap host"
 
+- name: "Checking monitor hosts exist in inventory"
+  ansible.builtin.assert:
+    that:
+      - iac_blueprint.ceph.monitors | difference(groups['all']) | length == 0
+    fail_msg: "Every declared Ceph monitor must be an Ansible inventory host"
+
+- name: "Checking SSH user"
+  ansible.builtin.assert:
+    that:
+      - iac_blueprint.ceph.ssh_user | default('root') is string
+      - iac_blueprint.ceph.ssh_user | default('root') is match('^[a-z_][a-z0-9_-]*[$]?$')
+    fail_msg: "ceph.ssh_user must be a valid Unix username"
+
 - name: "Checking explicit OSD provisioning opt-in"
   ansible.builtin.assert:
     that:

@@ -4,7 +4,7 @@ This Alpha release has validation and mock-CLI scenarios plus a guarded live
 multi-host KVM integration scenario (not yet run).
 Previously recorded scenario results predate the current version/preflight changes; they have not yet been run. The mock scenario checks
 command arguments/spec generation, bootstrap's local guard, accepted/rejected
-OSD device inventory (including duplicate ambiguous records) and two install passes in one converge play without a Ceph cluster. Mock state and the overridden bootstrap sentinel are confined to `/tmp/ceph-mock-state` in the unmounted Podman container. The
+OSD device inventory (including duplicate ambiguous records), bootstrap SSH-user arguments, and public-key installation for declared peers, and two install passes in one converge play without a Ceph cluster. Mock state and the overridden bootstrap sentinel are confined to `/tmp/ceph-mock-state` in the unmounted Podman container. The
 scenario deliberately omits Molecule's separate idempotence phase: its second
 install pass is the explicit repeat-install check, using persisted mock host
 registration and pool state. It does not verify Ceph
@@ -17,6 +17,10 @@ acceptance/convergence, disk safety, OSD provisioning, HA, or platform support.
 | Rocky Linux 9 KVM guests (three-node cluster) | Ceph Tentacle 20.2.4; Ansible Core >=2.19 | kvm-ceph — implemented, not run | Real bootstrap/host registration, 3 monitors, active manager, two scenario-owned OSD disks, pool, non-ERR health, repeat convergence and scoped cleanup |
 
 Use the pre-existing shared `idarsi-ansible-test-environments` environment; follow that repository's setup instructions to activate it.
+
+The `install-mock` and `kvm-ceph` scenarios each install their pinned
+`ansible.posix` collection (`molecule/*/requirements.yml`) through Molecule's
+Galaxy dependency step; no shared Ansible environment dependency is changed.
 
 The live KVM scenario is deliberately excluded from PR/push CI. It is a
 manual/scheduled heavy test requiring libvirt/KVM, an available Rocky 9 ISO,

@@ -23,6 +23,12 @@
         path: "/tmp/ceph-mock-state/bin"
         state: directory
         mode: "0755"
+    - name: "Add mock declared peer hosts"
+      ansible.builtin.add_host:
+        name: "{{ item }}"
+        ansible_connection: containers.podman.podman
+        ansible_host: "ceph-install-mock"
+      loop: ["ceph-b", "ceph-c"]
     - name: "Install mock Ceph CLI commands" # noqa: yaml[line-length]
       ansible.builtin.copy:
         dest: "{{ item.path }}"
@@ -43,11 +49,13 @@
             fi
             case "$*" in
               version) printf 'cephadm version 20.2.4\n' ;;
-              '--image quay.io/ceph/ceph:v20.2.4 bootstrap --mon-ip ceph-install-mock --cluster-network 10.20.0.0/24')
+              '--image quay.io/ceph/ceph:v20.2.4 bootstrap --mon-ip ceph-install-mock --cluster-network 10.20.0.0/24 --ssh-user molecule')
                 printf 'cephadm %s\n' "$*" >> /tmp/ceph-mock-state/ceph-mock.log
                 grep -qxF ceph-install-mock /tmp/ceph-mock-state/hosts || echo ceph-install-mock >> /tmp/ceph-mock-state/hosts
                 mkdir -p /tmp/ceph-mock-state
                 touch /tmp/ceph-mock-state/ceph.conf
+                mkdir -p /etc/ceph
+                printf 'ssh-ed25519 AAAATEST ceph\n' > /etc/ceph/ceph.pub
                 ;;
               *) echo "unexpected cephadm arguments: $*" >&2; exit 2 ;;
             esac
@@ -83,6 +91,7 @@
             cluster_name: "ceph"
             monitors: ["ceph-install-mock", "ceph-b", "ceph-c"]
             cluster_network: "10.20.0.0/24"
+            ssh_user: "molecule"
             allow_osd_provisioning: true
             osds: [{ host: "ceph-install-mock", device: "/dev/sdb" }]
             pools: [{ name: "test-pool", pg_num: 16 }]

@@ -28,6 +28,7 @@
         cluster_name: "ceph"
         monitors: ["ceph-a", "ceph-b", "ceph-c"]
         cluster_network: "192.168.250.0/24"
+        ssh_user: "molecule"
         allow_osd_provisioning: true
         osds:
           - { host: "ceph-b", device: "/dev/vdb" }

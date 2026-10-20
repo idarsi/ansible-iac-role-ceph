@@ -18,6 +18,10 @@ provisioner:
           distribution: Rocky
           distribution_major_version: "9"
         ansible_host: "ceph-install-mock"
+dependency:
+  name: galaxy
+  options:
+    requirements-file: requirements.yml
 verifier:
   name: ansible
 scenario:

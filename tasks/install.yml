@@ -80,8 +80,50 @@
       - "{{ hostvars[inventory_hostname].ansible_host }}"
       - "--cluster-network"
       - "{{ iac_blueprint.ceph.cluster_network }}"
+      - "--ssh-user"
+      - "{{ iac_blueprint.ceph.ssh_user | default('root') }}"
     creates: "{{ ceph_bootstrap_sentinel }}"
   when: iac_blueprint.ceph.cluster_network is defined
+
+- name: "Read the Ceph cluster public SSH key"
+  ansible.builtin.slurp:
+    src: "{{ ceph_ssh_public_key_path }}"
+  register: ceph_cluster_public_key
+
+- name: "Require a non-empty Ceph cluster public SSH key"
+  ansible.builtin.assert:
+    that:
+      - ceph_cluster_public_key.content | b64decode | trim | length > 0
+    fail_msg: "Ceph bootstrap did not provide a readable public key at {{ ceph_ssh_public_key_path }}"
+
+- name: "Ensure Ceph SSH access for declared monitor and OSD hosts"
+  ansible.builtin.user:
+    name: "{{ iac_blueprint.ceph.ssh_user | default('root') }}"
+    state: "present"
+    create_home: true
+  become: true
+  delegate_to: "{{ iac_resource }}"
+  loop: >-
+    {{ (iac_blueprint.ceph.monitors
+        + (iac_blueprint.ceph.osds | default([]) | map(attribute='host') | list))
+       | unique }}
+  loop_control:
+    loop_var: iac_resource
+
+- name: "Install the Ceph public key for declared monitor and OSD hosts"
+  ansible.posix.authorized_key:
+    user: "{{ iac_blueprint.ceph.ssh_user | default('root') }}"
+    key: "{{ ceph_cluster_public_key.content | b64decode | trim }}"
+    state: "present"
+    manage_dir: true
+  become: true
+  delegate_to: "{{ iac_resource }}"
+  loop: >-
+    {{ (iac_blueprint.ceph.monitors
+        + (iac_blueprint.ceph.osds | default([]) | map(attribute='host') | list))
+       | unique }}
+  loop_control:
+    loop_var: iac_resource
 
 - name: "Read existing pools"
   ansible.builtin.command:
