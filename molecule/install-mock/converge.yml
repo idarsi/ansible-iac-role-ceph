@@ -38,7 +38,7 @@
               shift
               [ "${1:-}" = ceph ] || { echo "missing ceph command" >&2; exit 2; }
               shift
-              printf 'cephadm shell -- %s\n' "$*" >> /tmp/ceph-mock-state/ceph-mock.log
+              printf 'cephadm shell -- ceph %s\n' "$*" >> /tmp/ceph-mock-state/ceph-mock.log
               exec ceph "$@"
             fi
             case "$*" in
