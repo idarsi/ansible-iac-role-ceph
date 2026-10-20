@@ -14,6 +14,23 @@
       - "version"
   changed_when: false
   check_mode: false
+  register: cephadm_version_result
+
+- name: "Parse installed cephadm version"
+  ansible.builtin.set_fact:
+    cephadm_installed_version: "{{ cephadm_version_result.stdout | regex_search('[0-9]+\\.[0-9]+\\.[0-9]+') | default('', true) }}"
+
+- name: "Require a known compatible cephadm version"
+  ansible.builtin.assert:
+    that:
+      - cephadm_installed_version is string
+      - cephadm_installed_version | length > 0
+      - (cephadm_installed_version.split('.')[0] | int) >= (cephadm_minimum_version | int)
+      - cephadm_installed_version.split('.')[0] == ceph_version.split('.')[0]
+    fail_msg: >-
+      Cannot safely use installed cephadm version
+      '{{ cephadm_version_result.stdout }}' with pinned Ceph {{ ceph_version }};
+      a parseable version with compatible major >= {{ cephadm_minimum_version }} is required.
 
 - name: "Require a bootstrap monitor address"
   ansible.builtin.assert:
@@ -34,6 +51,36 @@
       - "{{ ceph_container_image }}"
     creates: "/etc/ceph/ceph.conf"
   when: iac_blueprint.ceph.cluster_network is defined
+
+- name: "Read existing pools"
+  ansible.builtin.command:
+    argv: ["ceph", "osd", "pool", "ls", "--format", "json"]
+  register: ceph_pool_list
+  changed_when: false
+
+- name: "Read PG count for each declared pool that already exists"
+  ansible.builtin.command:
+    argv: ["ceph", "osd", "pool", "get", "{{ iac_resource.name }}", "pg_num", "--format", "json"]
+  register: ceph_pool_properties
+  changed_when: false
+  loop: "{{ iac_blueprint.ceph.pools | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
+  when: iac_resource.name in (ceph_pool_list.stdout | from_json)
+
+- name: "Reject existing pools with a conflicting PG count"
+  ansible.builtin.assert:
+    that:
+      - (iac_resource.stdout | from_json).pg_num == (iac_resource.iac_resource.pg_num | default(32))
+    fail_msg: >-
+      Existing pool {{ iac_resource.iac_resource.name }} has pg_num
+      {{ (iac_resource.stdout | from_json).pg_num }}, but the blueprint requests
+      {{ iac_resource.iac_resource.pg_num | default(32) }}. Pool properties are
+      not changed automatically.
+  loop: "{{ ceph_pool_properties.results | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
+  when: not iac_resource.skipped | default(false)
 
 - name: "Read registered ceph hosts"
   ansible.builtin.command:
@@ -104,7 +151,9 @@
     - iac_blueprint.ceph.osds | default([]) | length > 0
     - iac_blueprint.ceph.allow_osd_provisioning | default(false)
 
-- name: "Reject OSD devices not reported available by cephadm"
+# This is a fail-closed snapshot check only. Inventory can change immediately
+# after it is read (TOCTOU); it is not a guarantee that provisioning is safe.
+- name: "Reject OSD devices not reported available by cephadm snapshot"
   ansible.builtin.assert:
     that:
       - >-
@@ -145,44 +194,6 @@
   when:
     - iac_blueprint.ceph.osds | default([]) | length > 0
     - iac_blueprint.ceph.allow_osd_provisioning | default(false)
-
-- name: "Read existing pools"
-  ansible.builtin.command:
-    argv: ["ceph", "osd", "pool", "ls", "--format", "json"]
-  register: ceph_pool_list
-  changed_when: false
-
-- name: "Read PG count for each declared pool that already exists"
-  ansible.builtin.command:
-    argv:
-      - "ceph"
-      - "osd"
-      - "pool"
-      - "get"
-      - "{{ iac_resource.name }}"
-      - "pg_num"
-      - "--format"
-      - "json"
-  register: ceph_pool_properties
-  changed_when: false
-  loop: "{{ iac_blueprint.ceph.pools | default([]) }}"
-  loop_control:
-    loop_var: iac_resource
-  when: iac_resource.name in (ceph_pool_list.stdout | from_json)
-
-- name: "Reject existing pools with a conflicting PG count"
-  ansible.builtin.assert:
-    that:
-      - (iac_resource.stdout | from_json).pg_num == (iac_resource.iac_resource.pg_num | default(32))
-    fail_msg: >-
-      Existing pool {{ iac_resource.iac_resource.name }} has pg_num
-      {{ (iac_resource.stdout | from_json).pg_num }}, but the blueprint requests
-      {{ iac_resource.iac_resource.pg_num | default(32) }}. Pool properties are
-      not changed automatically.
-  loop: "{{ ceph_pool_properties.results | default([]) }}"
-  loop_control:
-    loop_var: iac_resource
-  when: not iac_resource.skipped | default(false)
 
 - name: "Create declared pools"
   ansible.builtin.command:
