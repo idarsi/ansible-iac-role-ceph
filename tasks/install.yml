@@ -23,6 +23,49 @@
     enabled: true
   when: ansible_service_mgr | default("") == "systemd"
 
+- name: "Verify declared hosts have the non-root Ceph SSH account"
+  ansible.builtin.getent:
+    database: "passwd"
+    key: "{{ iac_blueprint.ceph.ssh_user }}"
+    fail_key: false
+  delegate_to: "{{ iac_resource }}"
+  loop: >-
+    {{ (iac_blueprint.ceph.monitors
+        + (iac_blueprint.ceph.osds | default([]) | map(attribute='host') | list))
+       | unique }}
+  loop_control:
+    loop_var: iac_resource
+  when: (iac_blueprint.ceph.ssh_user | default('root')) != 'root'
+  register: ceph_ssh_user_lookup
+
+- name: "Require existing non-root Ceph accounts"
+  ansible.builtin.assert:
+    that:
+      - iac_resource.ansible_facts.getent_passwd[iac_blueprint.ceph.ssh_user] is defined
+    fail_msg: >-
+      Ceph SSH user '{{ iac_blueprint.ceph.ssh_user }}' must already exist on
+      declared host '{{ iac_resource.iac_resource }}'; this role will not create accounts.
+  loop: "{{ ceph_ssh_user_lookup.results | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
+  when: not iac_resource.skipped | default(false)
+
+- name: "Verify passwordless sudo for the non-root Ceph SSH user"
+  ansible.builtin.command:
+    argv: ["sudo", "-n", "true"]
+  become: true
+  become_user: "{{ iac_blueprint.ceph.ssh_user }}"
+  changed_when: false
+  delegate_to: "{{ iac_resource }}"
+  loop: >-
+    {{ (iac_blueprint.ceph.monitors
+        + (iac_blueprint.ceph.osds | default([]) | map(attribute='host') | list))
+       | unique }}
+  loop_control:
+    loop_var: iac_resource
+  when: (iac_blueprint.ceph.ssh_user | default('root')) != 'root'
+  register: ceph_sudo_check
+
 - name: "Require a cephadm artifact with a pinned checksum"
   ansible.builtin.assert:
     that:
@@ -96,20 +139,6 @@
       - ceph_cluster_public_key.content | b64decode | trim | length > 0
     fail_msg: "Ceph bootstrap did not provide a readable public key at {{ ceph_ssh_public_key_path }}"
 
-- name: "Ensure Ceph SSH access for declared monitor and OSD hosts"
-  ansible.builtin.user:
-    name: "{{ iac_blueprint.ceph.ssh_user | default('root') }}"
-    state: "present"
-    create_home: true
-  become: true
-  delegate_to: "{{ iac_resource }}"
-  loop: >-
-    {{ (iac_blueprint.ceph.monitors
-        + (iac_blueprint.ceph.osds | default([]) | map(attribute='host') | list))
-       | unique }}
-  loop_control:
-    loop_var: iac_resource
-
 - name: "Install the Ceph public key for declared monitor and OSD hosts"
   ansible.posix.authorized_key:
     user: "{{ iac_blueprint.ceph.ssh_user | default('root') }}"
@@ -124,6 +153,7 @@
        | unique }}
   loop_control:
     loop_var: iac_resource
+  register: ceph_public_key_distribution
 
 - name: "Read existing pools"
   ansible.builtin.command:

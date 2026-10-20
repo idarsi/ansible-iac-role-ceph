@@ -23,6 +23,13 @@
         path: "/tmp/ceph-mock-state/bin"
         state: directory
         mode: "0755"
+    - name: "Prepare the pre-existing mock SSH account"
+      ansible.builtin.shell: |
+        dnf -y install sudo >/dev/null
+        id molecule >/dev/null 2>&1 || useradd --create-home molecule
+        printf 'molecule ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/molecule
+        chmod 0440 /etc/sudoers.d/molecule
+      changed_when: false
     - name: "Add mock declared peer hosts"
       ansible.builtin.add_host:
         name: "{{ item }}"

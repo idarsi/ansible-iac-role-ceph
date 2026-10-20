@@ -49,8 +49,9 @@
   ansible.builtin.assert:
     that:
       - iac_blueprint.ceph.ssh_user | default('root') is string
-      - iac_blueprint.ceph.ssh_user | default('root') is match('^[a-z_][a-z0-9_-]*[$]?$')
-    fail_msg: "ceph.ssh_user must be a valid Unix username"
+      - iac_blueprint.ceph.ssh_user | default('root') is match('^[a-z_][a-z0-9_-]{0,30}[$]?$')
+      - iac_blueprint.ceph.ssh_user | default('root') | length <= 31
+    fail_msg: "ceph.ssh_user must be a supported Linux account name of at most 31 characters"
 
 - name: "Checking explicit OSD provisioning opt-in"
   ansible.builtin.assert:

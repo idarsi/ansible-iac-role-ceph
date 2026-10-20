@@ -33,6 +33,13 @@
       ansible.builtin.assert:
         that:
           - ceph_authorized_keys.stdout_lines == ['ssh-ed25519 AAAATEST ceph']
+    - name: "Assert public key was distributed only to declared peers"
+      ansible.builtin.assert:
+        that:
+          - >-
+            hostvars['ceph-install-mock'].ceph_public_key_distribution.results
+            | map(attribute='iac_resource') | list
+            == ['ceph-install-mock', 'ceph-b', 'ceph-c']
     - name: "Read final mocked host registration state"
       ansible.builtin.command: "cat /tmp/ceph-mock-state/hosts"
       register: ceph_mock_hosts

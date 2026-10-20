@@ -17,6 +17,7 @@ jobs:
         run: |
           python -m pip install "ansible-core>=2.19,<2.20" "molecule>=25,<26" "molecule-plugins[podman]>=23,<24" ansible-lint
           ansible-galaxy collection install containers.podman
+          ansible-galaxy collection install ansible.posix:2.1.0
       - name: Install Podman
         run: sudo apt-get update && sudo apt-get install -y podman
       - name: Run validation contract scenario
