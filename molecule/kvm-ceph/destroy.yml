@@ -15,7 +15,7 @@
           - test_environment | length > 0
         fail_msg: "Refusing to remove Ceph scenario VMs/disks without exact destructive-test acknowledgment."
 
-    - name: Remove only the two named OSD volumes and attachments
+    - name: Attempt removal of only the two named OSD volumes and attachments
       ansible.builtin.shell: |
         set -uo pipefail
         errors=()
@@ -63,14 +63,44 @@
       failed_when: false
       changed_when: true
 
+    - name: Retry removal of only the two named OSD volumes after guest teardown
+      ansible.builtin.shell: |
+        set -uo pipefail
+        errors=()
+        error_count=0
+        for vm in ceph-b ceph-c; do
+          volume="idarsi-ceph-${DISK_SUFFIX}-${vm}-osd.qcow2"
+          if virsh --connect "$LIBVIRT_URI" vol-info "$volume" --pool default >/dev/null 2>&1; then
+            if ! virsh --connect "$LIBVIRT_URI" vol-delete "$volume" --pool default; then
+              errors+=("delete volume $volume failed")
+              error_count=$((error_count + 1))
+            fi
+          fi
+        done
+        if ((error_count > 0)); then
+          printf '%s\n' "${errors[@]}" >&2
+          exit 1
+        fi
+      args:
+        executable: /bin/bash
+      environment:
+        DISK_SUFFIX: "{{ suffix }}"
+        LIBVIRT_URI: "{{ molecule_config.driver.libvirt_uri | default('qemu:///system') }}"
+      register: disk_cleanup_retry
+      failed_when: false
+      changed_when: true
+
     - name: Report all guest and disk cleanup failures
       ansible.builtin.assert:
         that:
           - disk_cleanup.rc == 0
+          - disk_cleanup_retry.rc == 0
           - destroyed_guests.results | selectattr('rc', 'ne', 0) | list | length == 0
         fail_msg: >-
-          Cleanup failures: disk/attachment cleanup rc={{ disk_cleanup.rc }}
+          Cleanup failures: initial disk/attachment cleanup rc={{ disk_cleanup.rc }}
           stderr={{ disk_cleanup.stderr | default('') }};
+          retry volume cleanup rc={{ disk_cleanup_retry.rc }}
+          stderr={{ disk_cleanup_retry.stderr | default('') }};
           guest cleanup failures={{ destroyed_guests.results | selectattr('rc', 'ne', 0) | map(attribute='stderr') | list }}
 
     - name: Remove temporary SSH credentials after successful guest cleanup
@@ -80,4 +110,5 @@
       loop: ["kvm_ed25519", "kvm_ed25519.pub"]
       when:
         - disk_cleanup.rc == 0
+        - disk_cleanup_retry.rc == 0
         - destroyed_guests.results | selectattr('rc', 'ne', 0) | list | length == 0
