@@ -71,7 +71,7 @@
         that:
           - not item.stat.exists
           - not (item.stat.islnk | default(false))
-        fail_msg: "Refusing to overwrite scenario guest OS disk {{ item.stat.path }}"
+        fail_msg: "Refusing to overwrite scenario guest OS disk {{ kvm_base_dir }}/molecule-{{ item.item }}-{{ disk_suffix }}.qcow2"
       loop: "{{ guest_disk_paths.results }}"
 
     - name: Create three guests using the shared KVM lifecycle helper
