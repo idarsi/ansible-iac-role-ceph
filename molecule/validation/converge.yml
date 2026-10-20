@@ -2,6 +2,10 @@
 - name: "Validate ceph blueprint"
   hosts: all
   gather_facts: false
+  vars:
+    ansible_facts:
+      distribution: "Rocky"
+      distribution_major_version: "9"
   tasks:
     - name: "Run accepted validation contract"
       ansible.builtin.include_role:

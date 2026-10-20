@@ -2,6 +2,10 @@
 - name: "Verify validation-only state"
   hosts: all
   gather_facts: false
+  vars:
+    ansible_facts:
+      distribution: "Rocky"
+      distribution_major_version: "9"
   tasks:
     - name: "Check no Ceph files were created"
       ansible.builtin.stat:

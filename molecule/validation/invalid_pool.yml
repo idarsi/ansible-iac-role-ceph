@@ -17,13 +17,15 @@
             osds: []
             pools: "{{ [invalid_pool_case.value] }}"
   rescue:
-    - name: "Record expected validation rejection"
+    - name: "Assert validation failed specifically for the pool definition"
+      ansible.builtin.assert:
+        that:
+          - "'ceph.pools must contain unique non-empty names and positive integer pg_num values' in ansible_failed_result.msg"
+        fail_msg: "{{ invalid_pool_case.label }} failed for an unexpected reason: {{ ansible_failed_result.msg }}"
+
+    - name: "Record expected pool validation rejection"
       ansible.builtin.set_fact:
         invalid_pool_rejected: true
-
-    - name: "Assert malformed pool was rejected"
-      ansible.builtin.assert:
-        that: invalid_pool_rejected | default(false)
 
 - name: "Assert {{ invalid_pool_case.label }} was not accepted"
   ansible.builtin.assert:
