@@ -12,6 +12,7 @@
         name: "{{ item }}"
         groups: "all"
       loop: ["ceph-b", "ceph-c"]
+      changed_when: false
 
     - name: "Run accepted validation contract"
       ansible.builtin.include_role:

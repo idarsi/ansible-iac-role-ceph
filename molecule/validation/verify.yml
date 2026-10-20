@@ -13,6 +13,7 @@
         name: "{{ item }}"
         groups: "all"
       loop: ["ceph-b", "ceph-c"]
+      changed_when: false
 
     - name: "Check validation sentinel is absent on target"
       ansible.builtin.stat:
