@@ -1,0 +1,72 @@
+---
+###############################################################################
+#
+# install.yml
+#
+# @author Arsi Atomi
+#
+###############################################################################
+
+- name: "Require cephadm on bootstrap host"
+  ansible.builtin.command:
+    argv:
+      - "cephadm"
+      - "version"
+  changed_when: false
+  check_mode: false
+
+- name: "Require a bootstrap monitor address"
+  ansible.builtin.assert:
+    that:
+      - hostvars[inventory_hostname].ansible_host is defined
+    fail_msg: "Set ansible_host to the reachable bootstrap monitor address"
+
+- name: "Bootstrap ceph cluster when not already bootstrapped"
+  ansible.builtin.command:
+    argv:
+      - "cephadm"
+      - "bootstrap"
+      - "--mon-ip"
+      - "{{ hostvars[inventory_hostname].ansible_host }}"
+      - "--cluster-network"
+      - "{{ iac_blueprint.ceph.cluster_network }}"
+    creates: "/etc/ceph/ceph.conf"
+  when: iac_blueprint.ceph.cluster_network is defined
+
+- name: "Read registered ceph hosts"
+  ansible.builtin.command:
+    argv: ["ceph", "orch", "host", "ls", "--format", "json"]
+  register: ceph_host_list
+  changed_when: false
+
+- name: "Register non-bootstrap monitor hosts"
+  ansible.builtin.command:
+    argv:
+      - "ceph"
+      - "orch"
+      - "host"
+      - "add"
+      - "{{ item }}"
+      - "{{ hostvars[item].ansible_host | default(item) }}"
+  loop: "{{ iac_blueprint.ceph.monitors | difference([inventory_hostname]) }}"
+  changed_when: true
+  when: item not in (ceph_host_list.stdout | from_json | map(attribute='hostname') | list)
+
+- name: "Read existing pools"
+  ansible.builtin.command:
+    argv: ["ceph", "osd", "pool", "ls", "--format", "json"]
+  register: ceph_pool_list
+  changed_when: false
+
+- name: "Create declared pools"
+  ansible.builtin.command:
+    argv:
+      - "ceph"
+      - "osd"
+      - "pool"
+      - "create"
+      - "{{ item.name }}"
+      - "{{ item.pg_num | default(32) }}"
+  loop: "{{ iac_blueprint.ceph.pools | default([]) }}"
+  changed_when: item.name not in (ceph_pool_list.stdout | from_json)
+  when: item.name not in (ceph_pool_list.stdout | from_json)

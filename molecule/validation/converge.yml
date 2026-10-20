@@ -1,0 +1,17 @@
+---
+- name: "Validate ceph blueprint"
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: "Run accepted validation contract"
+      ansible.builtin.include_role:
+        name: ansible-iac-role-ceph
+      vars:
+        state: "validate"
+        iac_blueprint:
+          ceph:
+            cluster_name: "storage"
+            monitors: ["ceph-validation", "ceph-b", "ceph-c"]
+            cluster_network: "10.20.0.0/24"
+            osds: []
+            pools: []

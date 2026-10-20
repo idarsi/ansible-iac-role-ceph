@@ -1,0 +1,13 @@
+---
+###############################################################################
+#
+# main.yml
+#
+# @author Arsi Atomi
+#
+###############################################################################
+
+iac_supported_os:
+  - { name: "Rocky", versions: ["9"] }
+cephadm_minimum_version: "19"
+cephadm_cluster_name: "ceph"

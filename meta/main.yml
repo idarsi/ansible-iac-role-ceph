@@ -1,0 +1,13 @@
+---
+galaxy_info:
+  namespace: idarsi
+  role_name: ceph
+  author: Arsi Atomi
+  description: Safely validate and bootstrap a limited cephadm cluster workflow
+  license: MIT
+  min_ansible_version: "2.19"
+  platforms:
+    - name: EL
+      versions: ["9"]
+  galaxy_tags: ["ceph", "storage"]
+dependencies: []

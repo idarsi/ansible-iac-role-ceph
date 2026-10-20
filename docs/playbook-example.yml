@@ -1,0 +1,17 @@
+---
+- name: "Validate ceph topology"
+  hosts: ceph-a
+  gather_facts: true
+  tasks:
+    - name: "Run Ceph role"
+      ansible.builtin.include_role:
+        name: "{{ playbook_dir }}/.."
+      vars:
+        state: "validate"
+        iac_blueprint:
+          ceph:
+            cluster_name: "storage"
+            monitors: ["ceph-a", "ceph-b", "ceph-c"]
+            cluster_network: "10.20.0.0/24"
+            osds: []
+            pools: []

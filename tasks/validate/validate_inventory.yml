@@ -1,0 +1,94 @@
+---
+###############################################################################
+#
+# validate_inventory.yml
+#
+# @author Arsi Atomi
+#
+###############################################################################
+
+- name: "Checking requested ceph state"
+  ansible.builtin.assert:
+    that:
+      - iac_state in ["validate", "install"]
+    fail_msg: "state must be validate or install"
+
+- name: "Checking ceph blueprint mapping"
+  ansible.builtin.assert:
+    that:
+      - iac_blueprint.ceph | type_debug == "dict"
+    fail_msg: "iac_blueprint.ceph must be a mapping"
+
+- name: "Checking ceph cluster name"
+  ansible.builtin.assert:
+    that:
+      - iac_blueprint.ceph.cluster_name is defined
+      - iac_blueprint.ceph.cluster_name is string
+      - iac_blueprint.ceph.cluster_name | length > 0
+    fail_msg: "ceph.cluster_name must be a non-empty string"
+
+- name: "Checking monitor topology"
+  ansible.builtin.assert:
+    that:
+      - iac_blueprint.ceph.monitors is defined
+      - iac_blueprint.ceph.monitors | type_debug == "list"
+      - iac_blueprint.ceph.monitors | length >= 3
+      - iac_blueprint.ceph.monitors | length % 2 == 1
+      - iac_blueprint.ceph.monitors | unique | length == iac_blueprint.ceph.monitors | length
+      - inventory_hostname in iac_blueprint.ceph.monitors
+    fail_msg: "ceph.monitors must be a unique odd-sized list of at least three inventory hosts including the current bootstrap host"
+
+- name: "Checking OSD device definitions"
+  ansible.builtin.assert:
+    that:
+      - iac_blueprint.ceph.osds | default([]) | type_debug == "list"
+      - >-
+        (iac_blueprint.ceph.osds | default([]) | selectattr('host', 'defined') | list | length)
+        == (iac_blueprint.ceph.osds | default([]) | length)
+      - >-
+        (iac_blueprint.ceph.osds | default([]) | selectattr('device', 'defined') | list | length)
+        == (iac_blueprint.ceph.osds | default([]) | length)
+      - >-
+        (iac_blueprint.ceph.osds | default([]) | selectattr('host', 'in', iac_blueprint.ceph.monitors) | list | length)
+        == (iac_blueprint.ceph.osds | default([]) | length)
+      - >-
+        (iac_blueprint.ceph.osds | default([]) | map(attribute='device') | unique | list | length)
+        == (iac_blueprint.ceph.osds | default([]) | length)
+    fail_msg: "OSDs require unique explicit devices on declared monitor hosts; automatic discovery is unsupported"
+
+- name: "Checking pool definitions"
+  ansible.builtin.assert:
+    that:
+      - iac_blueprint.ceph.pools | default([]) | type_debug == "list"
+      - >-
+        (iac_blueprint.ceph.pools | default([]) | selectattr('name', 'defined') | list | length)
+        == (iac_blueprint.ceph.pools | default([]) | length)
+      - >-
+        (iac_blueprint.ceph.pools | default([]) | map(attribute='name') | unique | list | length)
+        == (iac_blueprint.ceph.pools | default([]) | length)
+    fail_msg: "ceph.pools must contain uniquely named pools"
+
+- name: "Checking destructive OSD opt-in"
+  ansible.builtin.assert:
+    that:
+      - iac_blueprint.ceph.allow_osd_device_wipe | default(false) | bool
+    fail_msg: "OSD provisioning can destroy device data; explicitly set allow_osd_device_wipe: true"
+  when:
+    - iac_state == "install"
+    - iac_blueprint.ceph.osds | default([]) | length > 0
+
+- name: "Rejecting unsupported OSD deployment before mutation"
+  ansible.builtin.assert:
+    that:
+      - iac_blueprint.ceph.osds | default([]) | length == 0
+    fail_msg: "OSD deployment is not implemented; set osds to an empty list"
+  when: iac_state == "install"
+
+- name: "Checking cluster network before installation"
+  ansible.builtin.assert:
+    that:
+      - iac_blueprint.ceph.cluster_network is defined
+      - iac_blueprint.ceph.cluster_network is string
+      - iac_blueprint.ceph.cluster_network | length > 0
+    fail_msg: "cluster_network must be a non-empty CIDR string for install"
+  when: iac_state == "install"

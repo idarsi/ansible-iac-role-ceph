@@ -1,0 +1,19 @@
+---
+driver:
+  name: podman
+platforms:
+  - name: ceph-validation
+    image: "quay.io/rockylinux/rockylinux:9"
+    privileged: false
+    command: "sleep infinity"
+provisioner:
+  name: ansible
+  inventory:
+    host_vars:
+      ceph-validation:
+        ansible_connection: local
+        ansible_distribution: Rocky
+        ansible_distribution_major_version: "9"
+        ansible_host: "192.0.2.10"
+verifier:
+  name: ansible

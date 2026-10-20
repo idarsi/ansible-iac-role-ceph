@@ -1,0 +1,59 @@
+---
+###############################################################################
+#
+# main.yml
+#
+# @author Arsi Atomi
+#
+###############################################################################
+
+###############################################################################
+# CHECKING REQUIREMENTS
+###############################################################################
+
+- name: "Checking if operating system is supported"
+  ansible.builtin.fail:
+    msg: "Unsupported operating system: {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_major_version'] }}"
+  when: >
+    iac_supported_os | selectattr('name', 'equalto', ansible_facts['distribution'])
+                 | selectattr('versions', 'contains', ansible_facts['distribution_major_version'])
+                 | list
+                 | length == 0
+
+###############################################################################
+# CHECKING BLUEPRINT EXECUTION CONTEXT
+###############################################################################
+
+- name: "Checking ceph blueprint execution context"
+  ansible.builtin.assert:
+    that:
+      - iac_blueprint is defined
+    fail_msg: "iac_blueprint is not defined"
+
+- name: "Checking ceph blueprint root type"
+  ansible.builtin.assert:
+    that:
+      - iac_blueprint | type_debug == "dict"
+    fail_msg: "iac_blueprint must be a mapping containing ceph"
+
+- name: "Checking ceph service blueprint"
+  ansible.builtin.assert:
+    that:
+      - iac_blueprint.ceph is defined
+    fail_msg: "iac_blueprint.ceph is not defined"
+
+- name: "Setting IaC state"
+  ansible.builtin.set_fact:
+    iac_state: "{{ state | default('validate') }}"
+
+- name: "Validating ceph inventory"
+  ansible.builtin.include_tasks: validate/validate_inventory.yml
+
+- name: "STATE: Validate ceph blueprint"
+  ansible.builtin.debug:
+    msg: "Ceph blueprint is valid; no host changes were made."
+  when: iac_state == "validate"
+
+- name: "STATE: Converge ceph cluster"
+  ansible.builtin.include_tasks: install.yml
+  when: iac_state == "install"
