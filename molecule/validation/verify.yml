@@ -40,6 +40,7 @@
     - name: "Declare a second host for positive OSD validation"
       ansible.builtin.add_host:
         name: "ceph-b"
+        groups: "all"
     - name: "Accept the same device path on distinct hosts"
       ansible.builtin.include_role:
         name: "{{ playbook_dir }}/../.."

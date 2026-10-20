@@ -1,9 +1,13 @@
 ---
+- name: "Reset expected OSD validation rejection marker"
+  ansible.builtin.set_fact:
+    invalid_osd_rejected: false
+
 - name: "Confirm validation rejects {{ invalid_osd_case.label }}"
   block:
     - name: "Validate malformed OSD definition"
       ansible.builtin.include_role:
-        name: "{{ playbook_dir }}/../.."
+        name: "ansible-iac-role-ceph"
       vars:
         state: "validate"
         iac_blueprint:
@@ -18,6 +22,7 @@
       ansible.builtin.assert:
         that:
           - "'OSDs require unique host/device pairs' in ansible_failed_result.msg"
+          - ansible_failed_task.name == "Checking OSD device definitions"
         fail_msg: "{{ invalid_osd_case.label }} failed for an unexpected reason: {{ ansible_failed_result.msg }}"
     - name: "Record expected OSD validation rejection"
       ansible.builtin.set_fact:
@@ -26,4 +31,5 @@
 - name: "Assert OSD host/device constraint is rejected"
   ansible.builtin.assert:
     that:
-      - invalid_osd_rejected | default(false)
+      - invalid_osd_rejected
+    fail_msg: "Malformed OSD case {{ invalid_osd_case.label }} unexpectedly passed validation"

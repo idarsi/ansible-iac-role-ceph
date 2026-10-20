@@ -28,3 +28,30 @@
           - "'ceph.allow_osd_provisioning' in ansible_failed_result.msg"
           - ansible_failed_task.name == "Checking explicit OSD provisioning opt-in"
         fail_msg: "OSD without opt-in failed for an unexpected reason: {{ ansible_failed_result.msg }}"
+
+    - name: "Record expected preflight rejection"
+      ansible.builtin.set_fact:
+        osd_opt_in_rejected: true
+
+- name: "Assert opt-in rejection was observed"
+  ansible.builtin.assert:
+    that:
+      - osd_opt_in_rejected | default(false)
+    fail_msg: "Install unexpectedly continued past OSD provisioning preflight"
+
+- name: "Check Ceph configuration was not created by rejected install"
+  ansible.builtin.stat:
+    path: "/etc/ceph/ceph.conf"
+  register: rejected_install_config
+
+- name: "Check cephadm was not installed by rejected install"
+  ansible.builtin.stat:
+    path: "/usr/sbin/cephadm"
+  register: rejected_install_cephadm
+
+- name: "Assert rejected install caused no Ceph mutation"
+  ansible.builtin.assert:
+    that:
+      - not rejected_install_config.stat.exists
+      - not rejected_install_cephadm.stat.exists
+    fail_msg: "OSD preflight rejection occurred after Ceph state was changed"

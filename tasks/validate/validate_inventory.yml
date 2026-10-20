@@ -71,19 +71,21 @@
         == (iac_blueprint.ceph.osds | default([]) | length)
       - >-
         (iac_blueprint.ceph.osds | default([]) | selectattr('device', 'defined')
-        | selectattr('device', 'string') | select('match', '^/dev/[A-Za-z0-9._/-]+$') | list | length)
+        | selectattr('device', 'string')
+        | selectattr('device', 'match', '^/dev/[A-Za-z0-9._/-]+$') | list | length)
         == (iac_blueprint.ceph.osds | default([]) | length)
       - >-
         (iac_blueprint.ceph.osds | default([]) | selectattr('device', 'defined')
         | selectattr('device', 'string') | reject('search', '/\\.\\.') | list | length)
         == (iac_blueprint.ceph.osds | default([]) | length)
       - >-
-        (iac_blueprint.ceph.osds | default([]) | selectattr('host', 'in', hostvars) | list | length)
+        (iac_blueprint.ceph.osds | default([]) | selectattr('host', 'in', groups['all']) | list | length)
         == (iac_blueprint.ceph.osds | default([]) | length)
       - >-
         ((iac_blueprint.ceph.osds | default([]) | map(attribute='host') | list)
         | zip(iac_blueprint.ceph.osds | default([]) | map(attribute='device') | list)
-        | unique | list | length) == (iac_blueprint.ceph.osds | default([]) | length)
+        | map('join', '|') | unique | list | length)
+        == (iac_blueprint.ceph.osds | default([]) | length)
     fail_msg: "OSDs require unique host/device pairs using explicit /dev paths on declared inventory hosts; automatic discovery is unsupported"
 
 - name: "Checking pool definitions"
