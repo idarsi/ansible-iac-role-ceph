@@ -1,0 +1,16 @@
+---
+- name: "Verify mocked install commands"
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: "Read stub command log"
+      ansible.builtin.command: "cat /tmp/ceph-mock.log"
+      register: ceph_mock_log
+      changed_when: false
+    - name: "Assert bootstrap runs once and specs are applied on each pass"
+      ansible.builtin.assert:
+        that:
+          - ceph_mock_log.stdout_lines | select('match', '^cephadm bootstrap ') | list | length == 1
+          - ceph_mock_log.stdout_lines | select('match', '^ceph orch apply -i -') | list | length == 4
+          - ceph_mock_log.stdout is search('"service_type":"mon"')
+          - ceph_mock_log.stdout is search('"service_type":"mgr"')

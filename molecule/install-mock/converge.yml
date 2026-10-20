@@ -1,0 +1,61 @@
+---
+- name: "Exercise install against CLI stubs"
+  hosts: all
+  gather_facts: false
+  vars:
+    ansible_facts:
+      distribution: "Rocky"
+      distribution_major_version: "9"
+    ceph_mock_log: "/tmp/ceph-mock.log"
+  environment:
+    PATH: "/tmp/ceph-mock-bin:/usr/local/bin:/usr/bin:/bin"
+  tasks:
+    - name: "Create temporary stub command directory"
+      ansible.builtin.file:
+        path: "/tmp/ceph-mock-bin"
+        state: directory
+        mode: "0755"
+    - name: "Install mock Ceph CLI commands"
+      ansible.builtin.copy:
+        dest: "{{ item.path }}"
+        mode: "0755"
+        content: "{{ item.content }}"
+      loop:
+        - path: "/tmp/ceph-mock-bin/cephadm"
+          content: |
+            #!/bin/sh
+            printf 'cephadm %s\n' "$*" >> /tmp/ceph-mock.log
+            if [ "$1" = bootstrap ]; then
+              mkdir -p /etc/ceph
+              touch /etc/ceph/ceph.conf
+            fi
+            exit 0
+        - path: "/tmp/ceph-mock-bin/ceph"
+          content: |
+            #!/bin/sh
+            printf 'ceph %s\n' "$*" >> /tmp/ceph-mock.log
+            case "$*" in
+              "orch host ls --format json") printf '[{"hostname":"ceph-b"},{"hostname":"ceph-c"}]\n' ;;
+              "osd pool ls --format json") printf '[]\n' ;;
+              "orch apply -i -") cat >> /tmp/ceph-mock.log ;;
+            esac
+            exit 0
+    - name: "Remove previous mock log"
+      ansible.builtin.file:
+        path: "{{ ceph_mock_log }}"
+        state: absent
+    - name: "Apply install twice"
+      ansible.builtin.include_role:
+        name: ansible-iac-role-ceph
+      vars:
+        state: "install"
+        iac_blueprint:
+          ceph:
+            cluster_name: "ceph"
+            monitors: ["ceph-install-mock", "ceph-b", "ceph-c"]
+            cluster_network: "10.20.0.0/24"
+            osds: []
+            pools: []
+      loop: [1, 2]
+      loop_control:
+        loop_var: install_pass
