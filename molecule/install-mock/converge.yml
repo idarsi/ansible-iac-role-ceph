@@ -8,8 +8,8 @@
       distribution: "Rocky"
       distribution_major_version: "9"
     ceph_mock_log: "/tmp/ceph-mock-state/ceph-mock.log"
-    ceph_test_user: >-
-      ceph-ns-{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') | hash('sha1') | truncate(10, true, '') }}
+    ceph_missing_user: >-
+      ceph-missing-{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') | hash('sha1') | truncate(10, true, '') }}
   environment:
     PATH: "/tmp/ceph-mock-state/bin:/usr/local/bin:/usr/bin:/bin"
   tasks:
@@ -201,31 +201,18 @@
             rm -f /tmp/ceph-mock-state/ceph.conf
             : > /tmp/ceph-mock-state/ceph-mock.log
           changed_when: false
-        - name: "Create temporary account without sudo privileges"
-          block:
-            - name: "Check deterministic test account does not already exist"
-              ansible.builtin.getent:
-                database: passwd
-                key: "{{ ceph_test_user }}"
-              register: ceph_test_user_before
-              failed_when: false
-              changed_when: false
-            - name: "Require deterministic test account to be absent"
-              ansible.builtin.assert:
-                that:
-                  - ceph_test_user_before.ansible_facts.getent_passwd is not defined or ceph_test_user not in ceph_test_user_before.ansible_facts.getent_passwd
-                fail_msg: "Refusing to modify pre-existing test account {{ ceph_test_user }}."
-            - name: "Create temporary account without sudo privileges"
-              ansible.builtin.user:
-                name: "{{ ceph_test_user }}"
-                state: "present"
-                create_home: true
-              register: ceph_test_user_created_result
-            - name: "Track the account created by this test"
-              ansible.builtin.set_fact:
-                ceph_test_user_created: "{{ ceph_test_user_created_result is succeeded }}"
         - name: "Run install with a missing SSH account"
           block:
+            - name: "Assert synthetic missing account is absent"
+              ansible.builtin.command: "getent passwd {{ ceph_missing_user }}"
+              register: ceph_missing_user_lookup
+              changed_when: false
+              failed_when: false
+            - name: "Require synthetic missing account to be absent"
+              ansible.builtin.assert:
+                that:
+                  - ceph_missing_user_lookup.rc != 0
+                  - ceph_missing_user_lookup.rc != 127
             - name: "Attempt install with missing SSH account"
               ansible.builtin.include_role:
                 name: ansible-iac-role-ceph
@@ -237,7 +224,7 @@
                     cluster_name: "ceph"
                     monitors: ["ceph-install-mock"]
                     cluster_network: "10.20.0.0/24"
-                    ssh_user: "ceph-missing"
+                    ssh_user: "{{ ceph_missing_user }}"
             - name: "Fail if missing account is unexpectedly accepted"
               ansible.builtin.fail:
                 msg: "The role accepted a missing Ceph SSH account."
@@ -247,7 +234,7 @@
                 that:
                   - ansible_failed_task.name == "Require existing non-root Ceph accounts"
                   - >-
-                    ansible_failed_result.msg == "Ceph SSH user 'ceph-missing' must already exist on declared host 'ceph-install-mock'; this role will not create accounts."
+                    ansible_failed_result.msg == "Ceph SSH user '{{ ceph_missing_user }}' must already exist on declared host 'ceph-install-mock'; this role will not create accounts."
           always:
             - name: "Assert missing-account rejection preceded all mutation"
               ansible.builtin.shell: |
@@ -262,10 +249,18 @@
             - name: "Assert missing-account rejection did not install an authorized key"
               ansible.builtin.shell: |
                 set -e
-                test ! -e /home/ceph-missing/.ssh/authorized_keys
+                test ! -e "/home/{{ ceph_missing_user }}/.ssh/authorized_keys"
               changed_when: false
         - name: "Run install with an existing account lacking passwordless sudo"
           block:
+            - name: "Assert nobody account exists"
+              ansible.builtin.command: "getent passwd nobody"
+              register: ceph_nobody_lookup
+              changed_when: false
+            - name: "Require nobody account lookup to succeed"
+              ansible.builtin.assert:
+                that:
+                  - ceph_nobody_lookup.rc == 0
             - name: "Attempt install without passwordless sudo"
               ansible.builtin.include_role:
                 name: ansible-iac-role-ceph
@@ -277,7 +272,7 @@
                     cluster_name: "ceph"
                     monitors: ["ceph-install-mock"]
                     cluster_network: "10.20.0.0/24"
-                    ssh_user: "{{ ceph_test_user }}"
+                    ssh_user: "nobody"
             - name: "Fail if missing passwordless sudo is unexpectedly accepted"
               ansible.builtin.fail:
                 msg: "The role accepted an SSH account without passwordless sudo."
@@ -287,7 +282,7 @@
                 that:
                   - ansible_failed_task.name == "Require passwordless sudo for the non-root Ceph SSH user"
                   - >-
-                    ansible_failed_result.msg == "Ceph SSH user '{{ ceph_test_user }}' must have passwordless sudo on declared host 'ceph-install-mock'."
+                    ansible_failed_result.msg == "Ceph SSH user 'nobody' must have passwordless sudo on declared host 'ceph-install-mock'."
           always:
             - name: "Assert sudo rejection preceded all mutation"
               ansible.builtin.shell: |
@@ -302,12 +297,5 @@
             - name: "Assert sudo rejection did not install an authorized key"
               ansible.builtin.shell: |
                 set -e
-                test ! -e "/home/{{ ceph_test_user }}/.ssh/authorized_keys"
+                test ! -e /nonexistent/.ssh/authorized_keys
               changed_when: false
-      always:
-        - name: "Remove temporary SSH test account"
-          ansible.builtin.user:
-            name: "{{ ceph_test_user }}"
-            state: "absent"
-            remove: true
-          when: ceph_test_user_created | default(false) | bool
