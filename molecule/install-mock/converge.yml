@@ -104,6 +104,13 @@
               - "'Existing pool test-pool' in ansible_failed_result.msg"
     - name: "Require rejected OSD device preflight to stop provisioning"
       block:
+        - name: "Clear pool conflict for device inventory check"
+          ansible.builtin.file:
+            path: "/tmp/ceph-mock-pool-conflict"
+            state: absent
+        - name: "Reset mock log before rejected-device check"
+          ansible.builtin.command: "truncate -s 0 {{ ceph_mock_log }}"
+          changed_when: false
         - name: "Attempt install with unavailable OSD device"
           ansible.builtin.include_role:
             name: ansible-iac-role-ceph
@@ -133,3 +140,13 @@
           - "'daemon-apply' not in conflict_log.stdout_lines"
           - "'host-add ceph-b' not in conflict_log.stdout_lines"
           - "'host-add ceph-c' not in conflict_log.stdout_lines"
+    - name: "Assert rejected-device check applied no daemon or OSD specs"
+      ansible.builtin.command: "cat {{ ceph_mock_log }}"
+      register: rejected_device_log
+      changed_when: false
+    - name: "Check rejected-device log contains no spec applies"
+      ansible.builtin.assert:
+        that:
+          - "'device-inventory' in rejected_device_log.stdout_lines"
+          - "'daemon-apply' not in rejected_device_log.stdout_lines"
+          - "rejected_device_log.stdout_lines | select('match', '^spec .*\"service_type\":\"osd\"') | list | length == 0"

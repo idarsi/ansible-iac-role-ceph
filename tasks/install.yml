@@ -120,28 +120,8 @@
   loop_control:
     loop_var: iac_resource
 
-- name: "Converge monitor daemon placement"
-  ansible.builtin.command:
-    argv:
-      - "ceph"
-      - "orch"
-      - "apply"
-      - "-i"
-      - "-"
-    stdin: "{{ {'service_type': 'mon', 'placement': {'hosts': iac_blueprint.ceph.monitors}} | to_json }}"
-  changed_when: false
-
-- name: "Converge manager daemon placement"
-  ansible.builtin.command:
-    argv:
-      - "ceph"
-      - "orch"
-      - "apply"
-      - "-i"
-      - "-"
-    stdin: "{{ {'service_type': 'mgr', 'placement': {'hosts': iac_blueprint.ceph.monitors}} | to_json }}"
-  changed_when: false
-
+# Host registration is required before ceph orch device ls can report the
+# orchestrator's inventory for newly declared OSD hosts.
 - name: "Read orchestrator OSD device inventory before provisioning"
   ansible.builtin.command:
     argv: ["ceph", "orch", "device", "ls", "--format", "json"]
@@ -171,6 +151,18 @@
   when:
     - iac_blueprint.ceph.osds | default([]) | length > 0
     - iac_blueprint.ceph.allow_osd_provisioning | default(false)
+
+- name: "Converge monitor daemon placement"
+  ansible.builtin.command:
+    argv: ["ceph", "orch", "apply", "-i", "-"]
+    stdin: "{{ {'service_type': 'mon', 'placement': {'hosts': iac_blueprint.ceph.monitors}} | to_json }}"
+  changed_when: false
+
+- name: "Converge manager daemon placement"
+  ansible.builtin.command:
+    argv: ["ceph", "orch", "apply", "-i", "-"]
+    stdin: "{{ {'service_type': 'mgr', 'placement': {'hosts': iac_blueprint.ceph.monitors}} | to_json }}"
+  changed_when: false
 
 - name: "Apply declarative specifications for declared OSD devices"
   ansible.builtin.command:
