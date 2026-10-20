@@ -25,7 +25,9 @@
 - name: "Require existing non-root Ceph accounts"
   ansible.builtin.assert:
     that:
-      - iac_resource.ansible_facts.getent_passwd[iac_blueprint.ceph.ssh_user] is defined
+      - >-
+        iac_resource.ansible_facts.getent_passwd.get(
+        iac_blueprint.ceph.ssh_user) is not none
     fail_msg: >-
       Ceph SSH user '{{ iac_blueprint.ceph.ssh_user }}' must already exist on
       declared host '{{ iac_resource.iac_resource }}'; this role will not create accounts.
