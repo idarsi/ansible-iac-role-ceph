@@ -25,13 +25,6 @@
         path: "/tmp/ceph-mock-state/bin"
         state: directory
         mode: "0755"
-    - name: "Prepare the pre-existing mock SSH account"
-      ansible.builtin.shell: |
-        dnf -y install sudo >/dev/null
-        id molecule >/dev/null 2>&1 || useradd --create-home molecule
-        printf 'molecule ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/molecule
-        chmod 0440 /etc/sudoers.d/molecule
-      changed_when: false
     - name: "Add mock declared peer hosts"
       ansible.builtin.add_host:
         name: "{{ item }}"
@@ -39,6 +32,16 @@
         ansible_connection: containers.podman.podman
         ansible_host: "ceph-install-mock"
       loop: ["ceph-b", "ceph-c"]
+    - name: "Prepare the pre-existing mock SSH account on declared hosts"
+      ansible.builtin.shell: |
+        dnf -y install sudo >/dev/null
+        id molecule >/dev/null 2>&1 || useradd --create-home molecule
+        printf 'molecule ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/molecule
+        chmod 0440 /etc/sudoers.d/molecule
+      changed_when: false
+      delegate_to: "{{ item }}"
+      loop: ["ceph-install-mock", "ceph-b", "ceph-c"]
+      run_once: true
     - name: "Install mock Ceph CLI commands" # noqa: yaml[line-length]
       ansible.builtin.copy:
         dest: "{{ item.path }}"
