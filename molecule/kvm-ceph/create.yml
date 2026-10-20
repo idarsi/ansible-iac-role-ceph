@@ -10,7 +10,16 @@
     scenario_directory: "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') }}"
     kvm_base_dir: "/var/lib/libvirt/images/idarsi-test-bases"
     disk_suffix: "{{ ephemeral | hash('sha256') | truncate(8, true, '') }}"
+    osd_volume_pool: "{{ lookup('env', 'IDARSI_CEPH_OSD_VOLUME_POOL') | default('idarsi-test-bases', true) }}"
   tasks:
+    - name: Validate OSD volume pool name
+      ansible.builtin.assert:
+        that:
+          - osd_volume_pool is string
+          - osd_volume_pool | length > 0
+          - osd_volume_pool is match('^[A-Za-z0-9_.-]+$')
+        fail_msg: "IDARSI_CEPH_OSD_VOLUME_POOL must be a non-empty libvirt pool name containing only letters, digits, underscores, dots, or hyphens."
+
     - name: Require explicit destructive-test authorization
       ansible.builtin.assert:
         that:
@@ -107,7 +116,15 @@
   vars:
     molecule_config: "{{ lookup('file', lookup('env', 'MOLECULE_FILE')) | from_yaml }}"
     disk_suffix: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') | hash('sha256') | truncate(8, true, '') }}"
+    osd_volume_pool: "{{ lookup('env', 'IDARSI_CEPH_OSD_VOLUME_POOL') | default('idarsi-test-bases', true) }}"
   tasks:
+    - name: Validate OSD volume pool name
+      ansible.builtin.assert:
+        that:
+          - osd_volume_pool is string
+          - osd_volume_pool | length > 0
+          - osd_volume_pool is match('^[A-Za-z0-9_.-]+$')
+        fail_msg: "IDARSI_CEPH_OSD_VOLUME_POOL must be a non-empty libvirt pool name containing only letters, digits, underscores, dots, or hyphens."
     - name: Require the configured OSD volume pool to be active
       ansible.builtin.shell: |
         set -euo pipefail
@@ -117,7 +134,7 @@
         executable: /bin/bash
       environment:
         LIBVIRT_URI: "{{ molecule_config.driver.libvirt_uri | default('qemu:///system') }}"
-        OSD_VOLUME_POOL: "{{ lookup('env', 'IDARSI_CEPH_OSD_VOLUME_POOL') | default('idarsi-test-bases', true) }}"
+        OSD_VOLUME_POOL: "{{ osd_volume_pool }}"
       changed_when: false
 
     - name: Create and attach only the two scenario-owned OSD volumes
@@ -138,5 +155,5 @@
         MOLECULE_EPHEMERAL_DIRECTORY: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}"
         DISK_SUFFIX: "{{ disk_suffix }}"
         LIBVIRT_URI: "{{ molecule_config.driver.libvirt_uri | default('qemu:///system') }}"
-        OSD_VOLUME_POOL: "{{ lookup('env', 'IDARSI_CEPH_OSD_VOLUME_POOL') | default('idarsi-test-bases', true) }}"
+        OSD_VOLUME_POOL: "{{ osd_volume_pool }}"
       changed_when: true
