@@ -1,0 +1,31 @@
+---
+- name: "Reset expected rejection marker"
+  ansible.builtin.set_fact:
+    invalid_pool_rejected: false
+
+- name: "Confirm validation rejects {{ invalid_pool_case.label }}"
+  block:
+    - name: "Validate malformed pool record"
+      ansible.builtin.include_role:
+        name: ansible-iac-role-ceph
+      vars:
+        state: "validate"
+        iac_blueprint:
+          ceph:
+            cluster_name: "ceph"
+            monitors: ["ceph-validation", "ceph-b", "ceph-c"]
+            osds: []
+            pools: "{{ [invalid_pool_case.value] }}"
+  rescue:
+    - name: "Record expected validation rejection"
+      ansible.builtin.set_fact:
+        invalid_pool_rejected: true
+
+    - name: "Assert malformed pool was rejected"
+      ansible.builtin.assert:
+        that: invalid_pool_rejected | default(false)
+
+- name: "Assert {{ invalid_pool_case.label }} was not accepted"
+  ansible.builtin.assert:
+    that: invalid_pool_rejected | default(false)
+    fail_msg: "Malformed pool case {{ invalid_pool_case.label }} unexpectedly passed validation"

@@ -11,3 +11,14 @@
       ansible.builtin.assert:
         that:
           - not ceph_config.stat.exists
+    - name: "Reject malformed pool records and pg_num values"
+      ansible.builtin.include_tasks: invalid_pool.yml
+      loop:
+        - { label: "scalar record", value: "not-a-pool" }
+        - { label: "missing name", value: { pg_num: 8 } }
+        - { label: "bool pg_num", value: { name: "bad-bool", pg_num: true } }
+        - { label: "float pg_num", value: { name: "bad-float", pg_num: 1.5 } }
+        - { label: "string pg_num", value: { name: "bad-string", pg_num: "8" } }
+        - { label: "zero pg_num", value: { name: "bad-zero", pg_num: 0 } }
+      loop_control:
+        loop_var: invalid_pool_case

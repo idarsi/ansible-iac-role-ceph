@@ -83,7 +83,7 @@ Top-level blueprint variables
 | Variable          | Required (yes/no) | Default       | Short description           |
 |-------------------|-------------------|---------------|-----------------------------|
 | cluster_name      | yes               | none          | Cluster name; currently only `ceph` is supported. |
-| monitors          | yes               | none          | Odd-sized list of >=3 inventory hosts including bootstrap host. |
+| monitors          | yes               | none          | Odd-sized list of >=3 inventory hosts; the first host is the designated bootstrap host and must be the only host targeted by install. |
 | cluster_network   | install            | none          | Explicit private cluster CIDR; required for bootstrap. |
 | osds              | no                | []            | Explicit host/device records; non-empty lists validate but install rejects them because provisioning is not implemented. |
 | pools             | no                | []            | Pools to create, with optional pg_num (default 32). |
@@ -94,4 +94,4 @@ Configuration examples
 
 **Full high-availability deployment, including OSD provisioning, is not implemented.** A non-empty OSD list is validated but install rejects it before making host changes. Do not treat this role as satisfying a full HA-cluster request.
 
-Only use install in a disposable, reviewed environment after testing cephadm behavior manually. Bootstrap only runs when `/etc/ceph/ceph.conf` is absent. This initial implementation does not reconcile monitor daemon placement or offer proven retry/idempotence behavior for cluster operations. `monitors` validation establishes declared topology only; it does not establish quorum or high availability. Do not use for production clusters.
+Only use install in a disposable, reviewed environment after testing cephadm behavior manually. Target only the first host in `monitors` when invoking install; the role rejects install on any other host to avoid multiple hosts independently attempting bootstrap. Bootstrap only runs when `/etc/ceph/ceph.conf` is absent. This initial implementation does not reconcile monitor daemon placement or offer proven retry/idempotence behavior for cluster operations. `monitors` validation establishes declared topology only; it does not establish quorum or high availability. Do not use for production clusters.

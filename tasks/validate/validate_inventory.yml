@@ -87,13 +87,20 @@
         == (iac_blueprint.ceph.pools | default([]) | length)
       - >-
         (iac_blueprint.ceph.pools | default([]) | selectattr('pg_num', 'defined')
-        | selectattr('pg_num', 'number') | list | length)
+        | selectattr('pg_num', 'integer') | list | length)
         == (iac_blueprint.ceph.pools | default([]) | selectattr('pg_num', 'defined') | list | length)
       - >-
         (iac_blueprint.ceph.pools | default([]) | selectattr('pg_num', 'defined')
-        | selectattr('pg_num', 'number') | selectattr('pg_num', 'gt', 0) | list | length)
+        | selectattr('pg_num', 'integer') | selectattr('pg_num', 'gt', 0) | list | length)
         == (iac_blueprint.ceph.pools | default([]) | selectattr('pg_num', 'defined') | list | length)
-    fail_msg: "ceph.pools must contain unique non-empty names and positive numeric pg_num values"
+    fail_msg: "ceph.pools must contain unique non-empty names and positive integer pg_num values"
+
+- name: "Checking bootstrap host selection before installation"
+  ansible.builtin.assert:
+    that:
+      - inventory_hostname == iac_blueprint.ceph.monitors | first
+    fail_msg: "Run install only on the first host in ceph.monitors; it is the designated bootstrap host"
+  when: iac_state == "install"
 
 - name: "Checking destructive OSD opt-in"
   ansible.builtin.assert:
