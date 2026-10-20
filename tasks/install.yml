@@ -36,9 +36,8 @@
 
 - name: "Verify passwordless sudo for the non-root Ceph SSH user"
   ansible.builtin.command:
-    argv: ["sudo", "-n", "true"]
+    argv: ["runuser", "-u", "{{ iac_blueprint.ceph.ssh_user }}", "--", "sudo", "-n", "true"]
   become: true
-  become_user: "{{ iac_blueprint.ceph.ssh_user }}"
   changed_when: false
   failed_when: false
   delegate_to: "{{ iac_resource }}"

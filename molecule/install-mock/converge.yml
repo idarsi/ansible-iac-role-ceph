@@ -35,6 +35,7 @@
     - name: "Add mock declared peer hosts"
       ansible.builtin.add_host:
         name: "{{ item }}"
+        groups: "all"
         ansible_connection: containers.podman.podman
         ansible_host: "ceph-install-mock"
       loop: ["ceph-b", "ceph-c"]

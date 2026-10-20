@@ -7,6 +7,12 @@
       distribution: "Rocky"
       distribution_major_version: "9"
   tasks:
+    - name: "Declare monitor peers used by validation"
+      ansible.builtin.add_host:
+        name: "{{ item }}"
+        groups: "all"
+      loop: ["ceph-b", "ceph-c"]
+
     - name: "Run accepted validation contract"
       ansible.builtin.include_role:
         name: ansible-iac-role-ceph

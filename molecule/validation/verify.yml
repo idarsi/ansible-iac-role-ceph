@@ -8,6 +8,12 @@
       distribution_major_version: "9"
     validation_sentinel: "/tmp/ceph-validation-state-sentinel"
   tasks:
+    - name: "Declare monitor peers used by validation"
+      ansible.builtin.add_host:
+        name: "{{ item }}"
+        groups: "all"
+      loop: ["ceph-b", "ceph-c"]
+
     - name: "Check validation sentinel is absent on target"
       ansible.builtin.stat:
         path: "{{ validation_sentinel }}"
@@ -38,10 +44,6 @@
         loop_var: invalid_osd_case
     - name: "Reject OSD entries without explicit provisioning opt-in"
       ansible.builtin.include_tasks: reject_osd_without_opt_in.yml
-    - name: "Declare a second host for positive OSD validation"
-      ansible.builtin.add_host:
-        name: "ceph-b"
-        groups: "all"
     - name: "Accept the same device path on distinct hosts"
       ansible.builtin.include_role:
         name: "{{ playbook_dir }}/../.."
