@@ -54,20 +54,23 @@
         - path: "/tmp/ceph-mock-state/bin/ceph"
           content: |
             #!/bin/sh
-            case "$*" in
-              "orch host ls --format json")
+            # Dispatch on argc and each argv token. The full command is still
+            # logged below; using "$*" here would collapse argument boundaries.
+            printf 'ceph %s\n' "$*" >> /tmp/ceph-mock-state/ceph-mock.log
+            case "$#:$1:$2:$3:$4:$5:$6:$7" in
+              '5:orch:host:ls:--format:json::')
                 [ -f /tmp/ceph-mock-state/hosts ] || : > /tmp/ceph-mock-state/hosts
                 printf '['; separator=; while IFS= read -r host; do printf '%s{"hostname":"%s"}' "$separator" "$host"; separator=,; done < /tmp/ceph-mock-state/hosts; printf ']\n' ;;
-              "orch device ls --format json")
+              '5:orch:device:ls:--format:json::')
                 printf 'device-inventory\n' >> /tmp/ceph-mock-state/ceph-mock.log
                 if [ -f /tmp/ceph-mock-state/device-rejected ]; then printf '[{"hostname":"ceph-install-mock","path":"/dev/sdb","available":true,"rejected_reasons":[]},{"hostname":"ceph-install-mock","path":"/dev/sdb","available":false,"rejected_reasons":["Has a FileSystem"]}]\n'; else printf '[{"hostname":"ceph-install-mock","path":"/dev/sdb","available":true,"rejected_reasons":[]}]\n'; fi ;;
-              "orch host add ceph-b ceph-b") printf 'host-add ceph-b\n' >> /tmp/ceph-mock-state/ceph-mock.log; grep -qxF ceph-b /tmp/ceph-mock-state/hosts || echo ceph-b >> /tmp/ceph-mock-state/hosts ;;
-              "orch host add ceph-c ceph-c") printf 'host-add ceph-c\n' >> /tmp/ceph-mock-state/ceph-mock.log; grep -qxF ceph-c /tmp/ceph-mock-state/hosts || echo ceph-c >> /tmp/ceph-mock-state/hosts ;;
-              "orch apply -i -") printf 'daemon-apply\n' >> /tmp/ceph-mock-state/ceph-mock.log; spec=$(cat); SPEC="$spec" python3 -c 'import json,os,re,sys; x=json.loads(os.environ["SPEC"]); common={"placement":{"hosts":["ceph-install-mock","ceph-b","ceph-c"]}}; kind=x.get("service_type"); valid=(kind in ("mon","mgr") and x==dict(common,service_type=kind)) or (kind=="osd" and re.fullmatch(r"device_[0-9a-f]{64}",x.get("service_id","")) and x=={"service_type":"osd","service_id":x["service_id"],"placement":{"hosts":["ceph-install-mock"]},"spec":{"data_devices":{"paths":["/dev/sdb"]}}}); sys.exit(0 if valid else 2)' || { echo "unexpected service spec: $spec" >&2; exit 2; }; compact=$(printf '%s' "$spec" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin),separators=(",",":")))'); printf 'spec %s\n' "$compact" >> /tmp/ceph-mock-state/ceph-mock.log ;;
-              "osd pool ls --format json") [ -f /tmp/ceph-mock-state/pools ] || : > /tmp/ceph-mock-state/pools; awk 'BEGIN {printf "["} {printf "%s\"%s\"", sep, $0; sep=","} END {print "]"}' /tmp/ceph-mock-state/pools ;;
-              "osd pool get test-pool pg_num --format json") printf 'pool-preflight\n' >> /tmp/ceph-mock-state/ceph-mock.log; if [ -f /tmp/ceph-mock-state/pool-conflict ]; then printf '{"pool":"test-pool","pool_id":1,"pg_num":8}\n'; else printf '{"pool":"test-pool","pool_id":1,"pg_num":16}\n'; fi ;;
-              "osd pool create test-pool 16") printf 'ceph %s\n' "$*" >> /tmp/ceph-mock-state/ceph-mock.log; grep -qxF test-pool /tmp/ceph-mock-state/pools || echo test-pool >> /tmp/ceph-mock-state/pools ;;
-              *) echo "unexpected ceph arguments: $*" >&2; exit 2 ;;
+              '5:orch:host:add:ceph-b:ceph-b::') printf 'host-add ceph-b\n' >> /tmp/ceph-mock-state/ceph-mock.log; grep -qxF ceph-b /tmp/ceph-mock-state/hosts || echo ceph-b >> /tmp/ceph-mock-state/hosts ;;
+              '5:orch:host:add:ceph-c:ceph-c::') printf 'host-add ceph-c\n' >> /tmp/ceph-mock-state/ceph-mock.log; grep -qxF ceph-c /tmp/ceph-mock-state/hosts || echo ceph-c >> /tmp/ceph-mock-state/hosts ;;
+              '4:orch:apply:-i:-:::') printf 'daemon-apply\n' >> /tmp/ceph-mock-state/ceph-mock.log; spec=$(cat); SPEC="$spec" python3 -c 'import json,os,re,sys; x=json.loads(os.environ["SPEC"]); common={"placement":{"hosts":["ceph-install-mock","ceph-b","ceph-c"]}}; kind=x.get("service_type"); valid=(kind in ("mon","mgr") and x==dict(common,service_type=kind)) or (kind=="osd" and re.fullmatch(r"device_[0-9a-f]{64}",x.get("service_id","")) and x=={"service_type":"osd","service_id":x["service_id"],"placement":{"hosts":["ceph-install-mock"]},"spec":{"data_devices":{"paths":["/dev/sdb"]}}}); sys.exit(0 if valid else 2)' || { echo "unexpected service spec: $spec" >&2; exit 2; }; compact=$(printf '%s' "$spec" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin),separators=(",",":")))'); printf 'spec %s\n' "$compact" >> /tmp/ceph-mock-state/ceph-mock.log ;;
+              '5:osd:pool:ls:--format:json::') [ -f /tmp/ceph-mock-state/pools ] || : > /tmp/ceph-mock-state/pools; awk 'BEGIN {printf "["} {printf "%s\"%s\"", sep, $0; sep=","} END {print "]"}' /tmp/ceph-mock-state/pools ;;
+              '7:osd:pool:get:test-pool:pg_num:--format:json') printf 'pool-preflight\n' >> /tmp/ceph-mock-state/ceph-mock.log; if [ -f /tmp/ceph-mock-state/pool-conflict ]; then printf '{"pool":"test-pool","pool_id":1,"pg_num":8}\n'; else printf '{"pool":"test-pool","pool_id":1,"pg_num":16}\n'; fi ;;
+              '5:osd:pool:create:test-pool:16::') grep -qxF test-pool /tmp/ceph-mock-state/pools || echo test-pool >> /tmp/ceph-mock-state/pools ;;
+              *) echo "unexpected ceph arguments (argc=$#): $*" >&2; exit 2 ;;
             esac
     - name: "Apply install twice"
       ansible.builtin.include_role:
