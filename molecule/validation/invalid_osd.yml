@@ -8,6 +8,7 @@
       ceph:
         cluster_name: "ceph"
         monitors: ["ceph-validation", "ceph-b", "ceph-c"]
+        allow_osd_provisioning: true
         osds: "{{ invalid_osd_case.value }}"
         pools: []
   register: invalid_osd_result

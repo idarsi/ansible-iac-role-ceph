@@ -87,12 +87,13 @@ Top-level blueprint variables
 | monitors          | yes               | none          | Odd-sized list of >=3 inventory hosts; the first host is the designated bootstrap host and must be the only host targeted by install. |
 | cluster_network   | install            | none          | Explicit private cluster CIDR; required for bootstrap. |
 | osds              | no                | []            | Explicit host/device records. A device path must be unique per host; the same path on different hosts is valid. Omitted records do not remove existing OSDs. Hosts are registered from this declaration, so OSD-only inventory hosts are supported. |
+| allow_osd_provisioning | no          | false         | Explicitly permits submission of declared device requests to Ceph's orchestrator. Must be boolean `true` when `osds` is non-empty. It does not establish that disks are safe to use. |
 | pools             | no                | []            | Pools to create, with optional pg_num (default 32). |
 
 Configuration examples
 ----------------------
 
-**This role is not production-ready.** OSDs must be explicitly declared as host/device records; automatic discovery is not used. The role submits documented Ceph OSD service specs (`data_devices.paths`) using `ceph orch apply -i`; Ceph only provisions devices it considers available (no partitions, LVM, mount, filesystem, existing OSD, and adequate capacity). Unavailable/in-use devices are not zapped or forcibly provisioned. Check device eligibility with `ceph orch device ls` before installation.
+**This role is not production-ready.** OSD provisioning is disabled by default. To submit requests, set `allow_osd_provisioning: true` and explicitly declare OSD host/device records; otherwise validation rejects any non-empty `osds` list before host mutation. This opt-in is only authorization to submit documented Ceph OSD service specs (`data_devices.paths`) using `ceph orch apply -i`; it does **not** prove a device is safe, unused, or intended for Ceph. Review every host and device independently with `ceph orch device ls` and verify ownership/backups before enabling. Ceph's availability checks are not a disk-safety guarantee, and this role does not wipe devices.
 
 Every OSD host must also be present in Ansible inventory. Such hosts may be OSD-only and need not appear in `monitors`; the role registers the union of monitor and declared OSD hosts with the orchestrator. OSD specifications omitted from a later blueprint are not automatically removed; removal must be managed explicitly through Ceph.
 

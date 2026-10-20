@@ -77,6 +77,15 @@
         | unique | list | length) == (iac_blueprint.ceph.osds | default([]) | length)
     fail_msg: "OSDs require unique host/device pairs using explicit /dev paths on declared inventory hosts; automatic discovery is unsupported"
 
+- name: "Checking explicit OSD provisioning opt-in"
+  ansible.builtin.assert:
+    that:
+      - (iac_blueprint.ceph.allow_osd_provisioning | default(false)) | type_debug == "bool"
+      - >-
+        (iac_blueprint.ceph.osds | default([]) | length == 0)
+        or (iac_blueprint.ceph.allow_osd_provisioning | default(false))
+    fail_msg: "ceph.allow_osd_provisioning must be a boolean and must be true when OSD devices are declared"
+
 - name: "Checking pool definitions"
   ansible.builtin.assert:
     that:

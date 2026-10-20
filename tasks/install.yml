@@ -63,8 +63,7 @@
       - "apply"
       - "-i"
       - "-"
-    stdin: "{{ {'service_type': 'mon', 'placement': {'hosts': iac_blueprint.ceph.monitors}} | to_json }}"
-  changed_when: false
+  stdin: "{{ {'service_type': 'mon', 'placement': {'hosts': iac_blueprint.ceph.monitors}} | to_json }}"
 
 - name: "Converge manager daemon placement"
   ansible.builtin.command:
@@ -74,8 +73,7 @@
       - "apply"
       - "-i"
       - "-"
-    stdin: "{{ {'service_type': 'mgr', 'placement': {'hosts': iac_blueprint.ceph.monitors}} | to_json }}"
-  changed_when: false
+  stdin: "{{ {'service_type': 'mgr', 'placement': {'hosts': iac_blueprint.ceph.monitors}} | to_json }}"
 
 - name: "Apply declarative specifications for declared OSD devices"
   ansible.builtin.command:
@@ -95,8 +93,9 @@
   loop: "{{ iac_blueprint.ceph.osds | default([]) }}"
   loop_control:
     loop_var: iac_resource
-  changed_when: false
-  when: iac_blueprint.ceph.osds | default([]) | length > 0
+  when:
+    - iac_blueprint.ceph.osds | default([]) | length > 0
+    - iac_blueprint.ceph.allow_osd_provisioning | default(false)
 
 - name: "Read existing pools"
   ansible.builtin.command:

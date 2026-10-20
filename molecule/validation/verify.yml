@@ -35,6 +35,8 @@
         - { label: "duplicate host/device pair", value: [{ host: "ceph-validation", device: "/dev/sdb" }, { host: "ceph-validation", device: "/dev/sdb" }] }
       loop_control:
         loop_var: invalid_osd_case
+    - name: "Reject OSD entries without explicit provisioning opt-in"
+      ansible.builtin.include_tasks: reject_osd_without_opt_in.yml
     - name: "Declare a second host for positive OSD validation"
       ansible.builtin.add_host:
         name: "ceph-b"
@@ -47,12 +49,14 @@
           ceph:
             cluster_name: "ceph"
             monitors: ["ceph-validation", "ceph-b", "ceph-c"]
+            allow_osd_provisioning: true
             osds: [{ host: "ceph-validation", device: "/dev/sdb" }, { host: "ceph-b", device: "/dev/sdb" }]
             pools: []
     - name: "Check actual role-generated OSD service identifiers do not collide"
       ansible.builtin.set_fact:
-        iac_resource: "{{ item }}"
-        generated_osd_service_ids: "{{ (generated_osd_service_ids | default([])) + [iac_ceph_osd_service_id] }}"
+        generated_osd_service_ids: >-
+          {{ (generated_osd_service_ids | default([])) +
+             ['device_' ~ ((item.host ~ '|' ~ item.device) | hash('sha256'))] }}
       loop:
         - { host: "ceph-validation", device: "/dev/a-b" }
         - { host: "ceph-validation", device: "/dev/a_b" }
