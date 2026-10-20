@@ -22,14 +22,20 @@
     state: "started"
     enabled: true
 
+- name: "Require a cephadm artifact with a pinned checksum"
+  ansible.builtin.assert:
+    that:
+      - ceph_version == "20.2.4"
+    fail_msg: "The verified cephadm SHA-256 is available only for Ceph Tentacle 20.2.4."
+
 - name: "Install pinned Ceph Tentacle cephadm bootstrap executable"
   ansible.builtin.get_url:
     url: "https://download.ceph.com/rpm-{{ ceph_version }}/el9/noarch/cephadm"
     dest: "/usr/sbin/cephadm"
+    checksum: "sha256:5b78c8d5772ef7c5c8619dac6ee0b36716b829338ea7a11c9f2b896626ab354f"
     mode: "0755"
     owner: "root"
     group: "root"
-    force: false
     validate_certs: true
 
 - name: "Require cephadm on bootstrap host"
@@ -50,12 +56,11 @@
     that:
       - cephadm_installed_version is string
       - cephadm_installed_version | length > 0
-      - (cephadm_installed_version.split('.')[0] | int) >= (cephadm_minimum_version | int)
-      - cephadm_installed_version.split('.')[0] == ceph_version.split('.')[0]
+      - cephadm_installed_version == ceph_version
     fail_msg: >-
       Cannot safely use installed cephadm version
       '{{ cephadm_version_result.stdout }}' with pinned Ceph {{ ceph_version }};
-      a parseable version with compatible major >= {{ cephadm_minimum_version }} is required.
+      the exact pinned version {{ ceph_version }} is required.
 
 - name: "Require a bootstrap monitor address"
   ansible.builtin.assert:
