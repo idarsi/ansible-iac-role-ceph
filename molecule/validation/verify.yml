@@ -6,7 +6,16 @@
     ansible_facts:
       distribution: "Rocky"
       distribution_major_version: "9"
+    validation_sentinel: "/tmp/ceph-validation-state-sentinel"
   tasks:
+    - name: "Check validation sentinel is absent on target"
+      ansible.builtin.stat:
+        path: "{{ validation_sentinel }}"
+      register: validation_sentinel_before
+    - name: "Require a clean target before validation-only checks"
+      ansible.builtin.assert:
+        that:
+          - not validation_sentinel_before.stat.exists
     - name: "Reject malformed pool records and pg_num values"
       ansible.builtin.include_tasks: invalid_pool.yml
       loop:
@@ -45,6 +54,14 @@
             allow_osd_provisioning: true
             osds: [{ host: "ceph-validation", device: "/dev/sdb" }, { host: "ceph-b", device: "/dev/sdb" }]
             pools: []
+    - name: "Check validation sentinel remains absent on target"
+      ansible.builtin.stat:
+        path: "{{ validation_sentinel }}"
+      register: validation_sentinel_after
+    - name: "Assert validation-only state left target untouched"
+      ansible.builtin.assert:
+        that:
+          - not validation_sentinel_after.stat.exists
     - name: "Check actual role-generated OSD service identifiers do not collide"
       ansible.builtin.set_fact:
         generated_osd_service_ids: >-

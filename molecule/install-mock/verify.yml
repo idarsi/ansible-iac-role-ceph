@@ -15,3 +15,13 @@
           - ceph_mock_log.stdout_lines | select('equalto', 'spec {"service_type":"mgr","placement":{"hosts":["ceph-install-mock","ceph-b","ceph-c"]}}') | list | length == 2
           - ceph_mock_log.stdout_lines | select('match', '^spec \{"service_type":"osd","service_id":"device_[0-9a-f]{64}","placement":\{"hosts":\["ceph-install-mock"\]\},"spec":\{"data_devices":\{"paths":\["/dev/sdb"\]\}\}\}$') | list | length == 2
           - ceph_mock_log.stdout_lines | select('equalto', 'ceph osd pool create test-pool 16') | list | length == 1
+          - ceph_mock_log.stdout_lines | select('equalto', 'host-add ceph-b') | list | length == 1
+          - ceph_mock_log.stdout_lines | select('equalto', 'host-add ceph-c') | list | length == 1
+    - name: "Read final mocked host registration state"
+      ansible.builtin.command: "cat /tmp/ceph-mock-hosts"
+      register: ceph_mock_hosts
+      changed_when: false
+    - name: "Assert expected host registration converged exactly"
+      ansible.builtin.assert:
+        that:
+          - ceph_mock_hosts.stdout_lines | sort == ['ceph-b', 'ceph-c']

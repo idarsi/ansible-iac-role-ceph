@@ -40,8 +40,8 @@
               "orch host ls --format json")
                 [ -f /tmp/ceph-mock-hosts ] || : > /tmp/ceph-mock-hosts
                 printf '['; separator=; while IFS= read -r host; do printf '%s{"hostname":"%s"}' "$separator" "$host"; separator=,; done < /tmp/ceph-mock-hosts; printf ']\n' ;;
-              "orch host add ceph-b ceph-b") grep -qxF ceph-b /tmp/ceph-mock-hosts || echo ceph-b >> /tmp/ceph-mock-hosts ;;
-              "orch host add ceph-c ceph-c") grep -qxF ceph-c /tmp/ceph-mock-hosts || echo ceph-c >> /tmp/ceph-mock-hosts ;;
+              "orch host add ceph-b ceph-b") printf 'host-add ceph-b\n' >> /tmp/ceph-mock.log; grep -qxF ceph-b /tmp/ceph-mock-hosts || echo ceph-b >> /tmp/ceph-mock-hosts ;;
+              "orch host add ceph-c ceph-c") printf 'host-add ceph-c\n' >> /tmp/ceph-mock.log; grep -qxF ceph-c /tmp/ceph-mock-hosts || echo ceph-c >> /tmp/ceph-mock-hosts ;;
               "orch apply -i -") spec=$(cat); SPEC="$spec" python3 -c 'import json,os,re,sys; x=json.loads(os.environ["SPEC"]); common={"placement":{"hosts":["ceph-install-mock","ceph-b","ceph-c"]}}; kind=x.get("service_type"); valid=(kind in ("mon","mgr") and x==dict(common,service_type=kind)) or (kind=="osd" and re.fullmatch(r"device_[0-9a-f]{64}",x.get("service_id","")) and x=={"service_type":"osd","service_id":x["service_id"],"placement":{"hosts":["ceph-install-mock"]},"spec":{"data_devices":{"paths":["/dev/sdb"]}}}); sys.exit(0 if valid else 2)' || { echo "unexpected service spec: $spec" >&2; exit 2; }; compact=$(printf '%s' "$spec" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin),separators=(",",":")))'); printf 'spec %s\n' "$compact" >> /tmp/ceph-mock.log ;;
               "osd pool ls --format json") [ -f /tmp/ceph-mock-pools ] || : > /tmp/ceph-mock-pools; awk 'BEGIN {printf "["} {printf "%s\"%s\"", sep, $0; sep=","} END {print "]"}' /tmp/ceph-mock-pools ;;
               "osd pool create test-pool 16") printf 'ceph %s\n' "$*" >> /tmp/ceph-mock.log; grep -qxF test-pool /tmp/ceph-mock-pools || echo test-pool >> /tmp/ceph-mock-pools ;;
