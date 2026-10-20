@@ -22,8 +22,8 @@
           - ceph_mock_log.stdout_lines | select('equalto', 'spec {"service_type":"mgr","placement":{"hosts":["ceph-install-mock","ceph-b","ceph-c"]}}') | list | length == 2
           - ceph_mock_log.stdout_lines | select('match', '^spec \{"service_type":"osd","service_id":"device_[0-9a-f]{64}","placement":\{"hosts":\["ceph-install-mock"\]\},"spec":\{"data_devices":\{"paths":\["/dev/sdb"\]\}\}\}$') | list | length == 2
           - ceph_mock_log.stdout_lines | select('equalto', 'cephadm shell -- ceph osd pool create test-pool 16') | list | length == 1
-          - ceph_mock_log.stdout_lines | select('equalto', 'host-add ceph-b') | list | length == 1
-          - ceph_mock_log.stdout_lines | select('equalto', 'host-add ceph-c') | list | length == 1
+          - ceph_mock_log.stdout_lines | select('equalto', 'host-add ceph-b ceph-install-mock') | list | length == 1
+          - ceph_mock_log.stdout_lines | select('equalto', 'host-add ceph-c ceph-install-mock') | list | length == 1
     - name: "Read installed authorized key for declared peer user"
       ansible.builtin.command: "cat /home/molecule/.ssh/authorized_keys"
       delegate_to: "ceph-install-mock"
