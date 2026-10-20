@@ -20,12 +20,12 @@ for further information.
 The role manages:
 
 - Ceph cluster bootstrap and monitor-host registration (experimental).
-- Creation of declared pools on the bootstrap host.
+- Cephadm monitor/manager placement, explicitly declared OSD device requests, and declared pool creation (experimental; not production-verified).
 
 The role does not manage:
 
 - Ceph/cephadm package installation, repositories, firewall, time sync, or external PKI.
-- OSD provisioning, disk wiping, upgrades, removal, monitor daemon placement, or a verified functioning HA deployment.
+- Automated device discovery, disk wiping, upgrades/removal, or a verified functioning HA deployment.
 
 Supported platforms
 -------------------
@@ -40,7 +40,7 @@ Supported states
 | State               | Behaviour                     |
 |---------------------|-------------------------------|
 | validate            | Validates blueprint only; makes no target changes. |
-| install             | Attempts bootstrap, host registration, and pool creation; does not provision OSDs or establish HA. |
+| install             | Bootstraps and registers declared hosts, submits monitor/manager placement, requests explicitly declared OSDs, and creates pools; cluster convergence and rerun behavior remain unverified. |
 
 Quick start
 -----------
@@ -92,6 +92,6 @@ Top-level blueprint variables
 Configuration examples
 ----------------------
 
-**Full high-availability deployment, including OSD provisioning, is not implemented.** A non-empty OSD list is validated but install rejects it before making host changes. Do not treat this role as satisfying a full HA-cluster request.
+**This role is not production-ready.** OSDs must be explicitly declared as host/device records; automatic discovery is not used. Provisioning a declared device can destroy its data and requires `allow_osd_device_wipe: true`. Review every device and ensure it is dedicated before installation. This opt-in is not proof a device is safe.
 
-Only use install in a disposable, reviewed environment after testing cephadm behavior manually. Target only the first host in `monitors` when invoking install; the role rejects install on any other host to avoid multiple hosts independently attempting bootstrap. Bootstrap only runs when `/etc/ceph/ceph.conf` is absent. This initial implementation does not reconcile monitor daemon placement or offer proven retry/idempotence behavior for cluster operations. `monitors` validation establishes declared topology only; it does not establish quorum or high availability. Do not use for production clusters.
+Only use install in a disposable, reviewed environment after testing cephadm behavior manually. Target only the first host in `monitors` when invoking install; the role rejects install on any other host to avoid multiple hosts independently attempting bootstrap. Bootstrap only runs when `/etc/ceph/ceph.conf` is absent. Monitor and manager placement is submitted to the Ceph orchestrator. OSD operations, placement convergence, recovery after partial application, and idempotence have not been verified. `monitors` validation establishes declared topology only; it does not establish quorum or high availability. Do not use for production clusters.

@@ -61,12 +61,20 @@
         | selectattr('device', 'string') | rejectattr('device', 'equalto', '') | list | length)
         == (iac_blueprint.ceph.osds | default([]) | length)
       - >-
+        (iac_blueprint.ceph.osds | default([]) | selectattr('device', 'defined')
+        | selectattr('device', 'string') | select('match', '^/dev/[A-Za-z0-9._/-]+$') | list | length)
+        == (iac_blueprint.ceph.osds | default([]) | length)
+      - >-
+        (iac_blueprint.ceph.osds | default([]) | selectattr('device', 'defined')
+        | selectattr('device', 'string') | reject('search', '/\\.\\.') | list | length)
+        == (iac_blueprint.ceph.osds | default([]) | length)
+      - >-
         (iac_blueprint.ceph.osds | default([]) | selectattr('host', 'in', iac_blueprint.ceph.monitors) | list | length)
         == (iac_blueprint.ceph.osds | default([]) | length)
       - >-
         (iac_blueprint.ceph.osds | default([]) | map(attribute='device') | unique | list | length)
         == (iac_blueprint.ceph.osds | default([]) | length)
-    fail_msg: "OSDs require unique explicit devices on declared monitor hosts; automatic discovery is unsupported"
+    fail_msg: "OSDs require unique explicit /dev device paths on declared monitor hosts; automatic discovery is unsupported"
 
 - name: "Checking pool definitions"
   ansible.builtin.assert:
@@ -110,13 +118,6 @@
   when:
     - iac_state == "install"
     - iac_blueprint.ceph.osds | default([]) | length > 0
-
-- name: "Rejecting unsupported OSD deployment before mutation"
-  ansible.builtin.assert:
-    that:
-      - iac_blueprint.ceph.osds | default([]) | length == 0
-    fail_msg: "OSD deployment is not implemented; set osds to an empty list"
-  when: iac_state == "install"
 
 - name: "Checking cluster network before installation"
   ansible.builtin.assert:
