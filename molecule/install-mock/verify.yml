@@ -4,7 +4,7 @@
   gather_facts: false
   tasks:
     - name: "Read stub command log"
-      ansible.builtin.command: "cat /tmp/ceph-mock-install.log"
+      ansible.builtin.command: "cat /tmp/ceph-mock-state/install.log"
       register: ceph_mock_log
       changed_when: false
     - name: "Assert exact bootstrap command and submitted service specs" # noqa: yaml[line-length]
@@ -18,7 +18,7 @@
           - ceph_mock_log.stdout_lines | select('equalto', 'host-add ceph-b') | list | length == 1
           - ceph_mock_log.stdout_lines | select('equalto', 'host-add ceph-c') | list | length == 1
     - name: "Read final mocked host registration state"
-      ansible.builtin.command: "cat /tmp/ceph-mock-hosts"
+      ansible.builtin.command: "cat /tmp/ceph-mock-state/hosts"
       register: ceph_mock_hosts
       changed_when: false
     - name: "Assert expected host registration converged exactly"

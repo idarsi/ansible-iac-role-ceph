@@ -6,13 +6,20 @@
     ansible_facts:
       distribution: "Rocky"
       distribution_major_version: "9"
-    ceph_mock_log: "/tmp/ceph-mock.log"
+    ceph_mock_log: "/tmp/ceph-mock-state/ceph-mock.log"
   environment:
-    PATH: "/tmp/ceph-mock-bin:/usr/local/bin:/usr/bin:/bin"
+    PATH: "/tmp/ceph-mock-state/bin:/usr/local/bin:/usr/bin:/bin"
   tasks:
+    - name: "Reset namespaced mock state"
+      ansible.builtin.shell: |
+        rm -rf /tmp/ceph-mock-state
+        mkdir -p /tmp/ceph-mock-state
+        : > /tmp/ceph-mock-state/hosts
+        : > /tmp/ceph-mock-state/pools
+      changed_when: false
     - name: "Create temporary stub command directory"
       ansible.builtin.file:
-        path: "/tmp/ceph-mock-bin"
+        path: "/tmp/ceph-mock-state/bin"
         state: directory
         mode: "0755"
     - name: "Install mock Ceph CLI commands" # noqa: yaml[line-length]
@@ -21,50 +28,43 @@
         mode: "0755"
         content: "{{ item.content }}"
       loop:
-        - path: "/tmp/ceph-mock-bin/cephadm"
+        - path: "/tmp/ceph-mock-state/bin/cephadm"
           content: |
             #!/bin/sh
             case "$*" in
               version) printf 'cephadm version 20.2.4\n' ;;
               'bootstrap --mon-ip ceph-install-mock --cluster-network 10.20.0.0/24 --image quay.io/ceph/ceph:v20.2.4')
-                printf 'cephadm %s\n' "$*" >> /tmp/ceph-mock.log
-                grep -qxF ceph-install-mock /tmp/ceph-mock-hosts || echo ceph-install-mock >> /tmp/ceph-mock-hosts
-                mkdir -p /etc/ceph
-                touch /etc/ceph/ceph.conf
+                printf 'cephadm %s\n' "$*" >> /tmp/ceph-mock-state/ceph-mock.log
+                grep -qxF ceph-install-mock /tmp/ceph-mock-state/hosts || echo ceph-install-mock >> /tmp/ceph-mock-state/hosts
+                mkdir -p /tmp/ceph-mock-state
+                touch /tmp/ceph-mock-state/ceph.conf
                 ;;
               *) echo "unexpected cephadm arguments: $*" >&2; exit 2 ;;
             esac
-        - path: "/tmp/ceph-mock-bin/ceph"
+        - path: "/tmp/ceph-mock-state/bin/ceph"
           content: |
             #!/bin/sh
             case "$*" in
               "orch host ls --format json")
-                [ -f /tmp/ceph-mock-hosts ] || : > /tmp/ceph-mock-hosts
-                printf '['; separator=; while IFS= read -r host; do printf '%s{"hostname":"%s"}' "$separator" "$host"; separator=,; done < /tmp/ceph-mock-hosts; printf ']\n' ;;
+                [ -f /tmp/ceph-mock-state/hosts ] || : > /tmp/ceph-mock-state/hosts
+                printf '['; separator=; while IFS= read -r host; do printf '%s{"hostname":"%s"}' "$separator" "$host"; separator=,; done < /tmp/ceph-mock-state/hosts; printf ']\n' ;;
               "orch device ls --format json")
-                printf 'device-inventory\n' >> /tmp/ceph-mock.log
-                if [ -f /tmp/ceph-mock-device-rejected ]; then printf '[{"hostname":"ceph-install-mock","path":"/dev/sdb","available":false,"rejected_reasons":["Has a FileSystem"]}]\n'; else printf '[{"hostname":"ceph-install-mock","path":"/dev/sdb","available":true,"rejected_reasons":[]}]\n'; fi ;;
-              "orch host add ceph-b ceph-b") printf 'host-add ceph-b\n' >> /tmp/ceph-mock.log; grep -qxF ceph-b /tmp/ceph-mock-hosts || echo ceph-b >> /tmp/ceph-mock-hosts ;;
-              "orch host add ceph-c ceph-c") printf 'host-add ceph-c\n' >> /tmp/ceph-mock.log; grep -qxF ceph-c /tmp/ceph-mock-hosts || echo ceph-c >> /tmp/ceph-mock-hosts ;;
-              "orch apply -i -") printf 'daemon-apply\n' >> /tmp/ceph-mock.log; spec=$(cat); SPEC="$spec" python3 -c 'import json,os,re,sys; x=json.loads(os.environ["SPEC"]); common={"placement":{"hosts":["ceph-install-mock","ceph-b","ceph-c"]}}; kind=x.get("service_type"); valid=(kind in ("mon","mgr") and x==dict(common,service_type=kind)) or (kind=="osd" and re.fullmatch(r"device_[0-9a-f]{64}",x.get("service_id","")) and x=={"service_type":"osd","service_id":x["service_id"],"placement":{"hosts":["ceph-install-mock"]},"spec":{"data_devices":{"paths":["/dev/sdb"]}}}); sys.exit(0 if valid else 2)' || { echo "unexpected service spec: $spec" >&2; exit 2; }; compact=$(printf '%s' "$spec" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin),separators=(",",":")))'); printf 'spec %s\n' "$compact" >> /tmp/ceph-mock.log ;;
-              "osd pool ls --format json") [ -f /tmp/ceph-mock-pools ] || : > /tmp/ceph-mock-pools; awk 'BEGIN {printf "["} {printf "%s\"%s\"", sep, $0; sep=","} END {print "]"}' /tmp/ceph-mock-pools ;;
-              "osd pool get test-pool pg_num --format json") printf 'pool-preflight\n' >> /tmp/ceph-mock.log; if [ -f /tmp/ceph-mock-pool-conflict ]; then printf '{"pool":"test-pool","pool_id":1,"pg_num":8}\n'; else printf '{"pool":"test-pool","pool_id":1,"pg_num":16}\n'; fi ;;
-              "osd pool create test-pool 16") printf 'ceph %s\n' "$*" >> /tmp/ceph-mock.log; grep -qxF test-pool /tmp/ceph-mock-pools || echo test-pool >> /tmp/ceph-mock-pools ;;
+                printf 'device-inventory\n' >> /tmp/ceph-mock-state/ceph-mock.log
+                if [ -f /tmp/ceph-mock-state/device-rejected ]; then printf '[{"hostname":"ceph-install-mock","path":"/dev/sdb","available":true,"rejected_reasons":[]},{"hostname":"ceph-install-mock","path":"/dev/sdb","available":false,"rejected_reasons":["Has a FileSystem"]}]\n'; else printf '[{"hostname":"ceph-install-mock","path":"/dev/sdb","available":true,"rejected_reasons":[]}]\n'; fi ;;
+              "orch host add ceph-b ceph-b") printf 'host-add ceph-b\n' >> /tmp/ceph-mock-state/ceph-mock.log; grep -qxF ceph-b /tmp/ceph-mock-state/hosts || echo ceph-b >> /tmp/ceph-mock-state/hosts ;;
+              "orch host add ceph-c ceph-c") printf 'host-add ceph-c\n' >> /tmp/ceph-mock-state/ceph-mock.log; grep -qxF ceph-c /tmp/ceph-mock-state/hosts || echo ceph-c >> /tmp/ceph-mock-state/hosts ;;
+              "orch apply -i -") printf 'daemon-apply\n' >> /tmp/ceph-mock-state/ceph-mock.log; spec=$(cat); SPEC="$spec" python3 -c 'import json,os,re,sys; x=json.loads(os.environ["SPEC"]); common={"placement":{"hosts":["ceph-install-mock","ceph-b","ceph-c"]}}; kind=x.get("service_type"); valid=(kind in ("mon","mgr") and x==dict(common,service_type=kind)) or (kind=="osd" and re.fullmatch(r"device_[0-9a-f]{64}",x.get("service_id","")) and x=={"service_type":"osd","service_id":x["service_id"],"placement":{"hosts":["ceph-install-mock"]},"spec":{"data_devices":{"paths":["/dev/sdb"]}}}); sys.exit(0 if valid else 2)' || { echo "unexpected service spec: $spec" >&2; exit 2; }; compact=$(printf '%s' "$spec" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin),separators=(",",":")))'); printf 'spec %s\n' "$compact" >> /tmp/ceph-mock-state/ceph-mock.log ;;
+              "osd pool ls --format json") [ -f /tmp/ceph-mock-state/pools ] || : > /tmp/ceph-mock-state/pools; awk 'BEGIN {printf "["} {printf "%s\"%s\"", sep, $0; sep=","} END {print "]"}' /tmp/ceph-mock-state/pools ;;
+              "osd pool get test-pool pg_num --format json") printf 'pool-preflight\n' >> /tmp/ceph-mock-state/ceph-mock.log; if [ -f /tmp/ceph-mock-state/pool-conflict ]; then printf '{"pool":"test-pool","pool_id":1,"pg_num":8}\n'; else printf '{"pool":"test-pool","pool_id":1,"pg_num":16}\n'; fi ;;
+              "osd pool create test-pool 16") printf 'ceph %s\n' "$*" >> /tmp/ceph-mock-state/ceph-mock.log; grep -qxF test-pool /tmp/ceph-mock-state/pools || echo test-pool >> /tmp/ceph-mock-state/pools ;;
               *) echo "unexpected ceph arguments: $*" >&2; exit 2 ;;
             esac
-    - name: "Reset mock command and registry state"
-      ansible.builtin.shell: |
-        rm -f {{ ceph_mock_log }} /tmp/ceph-mock-hosts /tmp/ceph-mock-pools
-        rm -f /tmp/ceph-mock-device-rejected /tmp/ceph-mock-pool-conflict
-        rm -f /etc/ceph/ceph.conf
-        : > /tmp/ceph-mock-hosts
-        : > /tmp/ceph-mock-pools
-      changed_when: false
     - name: "Apply install twice"
       ansible.builtin.include_role:
         name: ansible-iac-role-ceph
       vars:
         state: "install"
+        ceph_bootstrap_sentinel: "/tmp/ceph-mock-state/ceph.conf"
         iac_blueprint:
           ceph:
             cluster_name: "ceph"
@@ -79,17 +79,17 @@
     - name: "Save normal install command log"
       ansible.builtin.copy:
         src: "{{ ceph_mock_log }}"
-        dest: "/tmp/ceph-mock-install.log"
+        dest: "/tmp/ceph-mock-state/install.log"
         remote_src: true
         mode: "0644"
     - name: "Switch device inventory to rejected state"
       ansible.builtin.file:
-        path: "/tmp/ceph-mock-device-rejected"
+        path: "/tmp/ceph-mock-state/device-rejected"
         state: touch
         mode: "0644"
     - name: "Mark existing pool as conflicting"
       ansible.builtin.file:
-        path: "/tmp/ceph-mock-pool-conflict"
+        path: "/tmp/ceph-mock-state/pool-conflict"
         state: touch
         mode: "0644"
     - name: "Reset mock log before conflict check"
@@ -102,6 +102,7 @@
             name: ansible-iac-role-ceph
           vars:
             state: "install"
+            ceph_bootstrap_sentinel: "/tmp/ceph-mock-state/ceph.conf"
             iac_blueprint:
               ceph:
                 cluster_name: "ceph"
@@ -117,7 +118,7 @@
       block:
         - name: "Clear pool conflict for device inventory check"
           ansible.builtin.file:
-            path: "/tmp/ceph-mock-pool-conflict"
+            path: "/tmp/ceph-mock-state/pool-conflict"
             state: absent
         - name: "Reset mock log before rejected-device check"
           ansible.builtin.command: "truncate -s 0 {{ ceph_mock_log }}"
@@ -127,6 +128,7 @@
             name: ansible-iac-role-ceph
           vars:
             state: "install"
+            ceph_bootstrap_sentinel: "/tmp/ceph-mock-state/ceph.conf"
             iac_blueprint:
               ceph:
                 cluster_name: "ceph"

@@ -3,7 +3,7 @@
 This Alpha release has a validation scenario and a mock-CLI install scenario.
 Previously recorded scenario results predate the current version/preflight changes; they have not yet been run. The mock scenario checks
 command arguments/spec generation, bootstrap's local guard, accepted/rejected
-OSD device inventory and two install passes in one converge play without a Ceph cluster. The
+OSD device inventory (including duplicate ambiguous records) and two install passes in one converge play without a Ceph cluster. Mock state and the overridden bootstrap sentinel are confined to `/tmp/ceph-mock-state` in the unmounted Podman container. The
 scenario deliberately omits Molecule's separate idempotence phase: its second
 install pass is the explicit repeat-install check, using persisted mock host
 registration and pool state. It does not verify Ceph
@@ -12,7 +12,7 @@ acceptance/convergence, disk safety, OSD provisioning, HA, or platform support.
 | Platform/image | Ansible or application versions | Molecule scenarios | Main coverage |
 |---|---|---|---|
 | Rocky Linux 9 Podman container | Ansible Core >=2.19 | validation — passed | Accepted and rejected blueprint inputs; validation-only non-mutation |
-| Rocky Linux 9 Podman container | Ansible Core >=2.19 | install-mock — pending | Installed cephadm version check, pool conflict preflight ahead of mutation, accepted/rejected OSD inventory, pinned image and repeated install |
+| Rocky Linux 9 Podman container | Ansible Core >=2.19 | install-mock — pending | Installed cephadm version check, pool conflict preflight ahead of mutation, accepted and duplicate-ambiguous/rejected OSD inventory, pinned image and repeated install |
 
 Use the pre-existing shared `idarsi-ansible-test-environments` environment; follow that repository's setup instructions to activate it.
 

@@ -11,6 +11,7 @@
         name: "{{ playbook_dir }}/../.."
       vars:
         state: "install"
+        ceph_bootstrap_sentinel: "/tmp/ceph-validation-state/ceph.conf"
         iac_blueprint:
           ceph:
             cluster_name: "ceph"
@@ -41,7 +42,7 @@
 
 - name: "Check Ceph configuration was not created by rejected install"
   ansible.builtin.stat:
-    path: "/etc/ceph/ceph.conf"
+    path: "/tmp/ceph-validation-state/ceph.conf"
   register: rejected_install_config
 
 - name: "Check cephadm was not installed by rejected install"

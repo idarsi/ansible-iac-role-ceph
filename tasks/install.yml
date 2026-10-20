@@ -49,7 +49,7 @@
       - "{{ iac_blueprint.ceph.cluster_network }}"
       - "--image"
       - "{{ ceph_container_image }}"
-    creates: "/etc/ceph/ceph.conf"
+    creates: "{{ ceph_bootstrap_sentinel }}"
   when: iac_blueprint.ceph.cluster_network is defined
 
 - name: "Read existing pools"
@@ -136,6 +136,11 @@
 - name: "Reject OSD devices not reported available by cephadm snapshot"
   ansible.builtin.assert:
     that:
+      - >-
+        (ceph_osd_device_inventory.stdout | from_json
+         | selectattr('hostname', 'equalto', iac_resource.host)
+         | selectattr('path', 'equalto', iac_resource.device)
+         | list | length) == 1
       - >-
         (ceph_osd_device_inventory.stdout | from_json
          | selectattr('hostname', 'equalto', iac_resource.host)
