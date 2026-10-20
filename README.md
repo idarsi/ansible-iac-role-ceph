@@ -1,5 +1,5 @@
-> **Maturity State: Experimental**<br>
-> **RC Readiness: 18%**
+> **Maturity State: Alpha**<br>
+> **RC Readiness: 43%**
 
 ANSIBLE-IAC-ROLE-CEPH
 ===============================
