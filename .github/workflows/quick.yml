@@ -1,0 +1,29 @@
+name: Quick checks
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+jobs:
+  quick:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test tools
+        run: |
+          python -m pip install "ansible-core>=2.19,<2.20" "molecule>=25,<26" "molecule-plugins[podman]>=23,<24" ansible-lint
+          ansible-galaxy collection install containers.podman
+      - name: Install Podman
+        run: sudo apt-get update && sudo apt-get install -y podman
+      - name: Run validation contract scenario
+        run: molecule test -s validation
+      - name: Run mocked install contract scenario
+        run: molecule test -s install-mock
+      - name: Run production lint
+        run: ansible-lint --profile production
+      - name: Check example playbook syntax
+        run: ansible-playbook --syntax-check -i docs/inventory-minimal.yml docs/playbook-example.yml

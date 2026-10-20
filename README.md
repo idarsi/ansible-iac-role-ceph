@@ -32,7 +32,7 @@ Supported platforms
 
 | Operating system                  | Supported versions                | Automated test coverage                   |
 |-----------------------------------|-----------------------------------|-------------------------------------------|
-| Rocky Linux                       | 9                                 | Validation and install-mock Molecule scenarios passed; live Rocky 9 support remains unverified |
+| Rocky Linux                       | 9, 10                             | Rocky 9 validation/install-mock only; Rocky 10 and all live support remain unverified |
 
 Supported states
 ----------------
@@ -57,7 +57,8 @@ Control node
 
 Target host
 
-- Rocky Linux 9 with a working cephadm/ceph CLI, network connectivity, sudo/root privileges, and a prepared Ceph-compatible environment. The role platform gate is Rocky 9 only; no platform support has been independently verified.
+- Rocky Linux 9 or 10 with a working cephadm/ceph CLI, network connectivity, sudo/root privileges, and a prepared Ceph-compatible environment. Rocky 9's upstream Ceph compatibility is a known evidence gap; Rocky 10 is in the intended matrix but untested.
+- Bootstrap pins the daemon container to `quay.io/ceph/ceph:v20.2.4` (Tentacle), independently of the installed cephadm CLI version.
 - Bootstrap host must have `ansible_host`; cluster network must be provided.
 
 Blueprint structure
@@ -97,4 +98,4 @@ Configuration examples
 
 Every OSD host must also be present in Ansible inventory. Such hosts may be OSD-only and need not appear in `monitors`; the role registers the union of monitor and declared OSD hosts with the orchestrator. OSD specifications omitted from a later blueprint are not automatically removed; removal must be managed explicitly through Ceph.
 
-Only use install in a disposable, reviewed environment after testing cephadm behavior manually. Target only the first host in `monitors` when invoking install; the role rejects install on any other host to avoid multiple hosts independently attempting bootstrap. Bootstrap only runs when `/etc/ceph/ceph.conf` is absent. Monitor and manager placement and OSD device requests submit declarative orchestrator service specs on every install run. Because Ceph does not expose a stable, directly comparable current spec through this role's CLI workflow, these apply commands report `changed: false`; Ansible changed reporting therefore does not indicate whether Ceph updated a spec. Host registration and pool creation report changes when they issue commands; only bootstrap and pool existence have local guards. A mock CLI test exercises command construction and the local rerun path, not Ceph convergence or idempotence. Ceph's asynchronous orchestration completion and recovery after partial application remain outside role verification. `monitors` validation establishes declared topology only; it does not establish quorum or high availability. Do not use for production clusters. See [the maturity roadmap](docs/ROADMAP.md) for evidence gates.
+Only use install in a disposable, reviewed environment after testing cephadm behavior manually. Target only the first host in `monitors`; bootstrap is guarded by `/etc/ceph/ceph.conf`. The role registers monitor/OSD hosts, waits (up to 60 seconds) for registration, applies declarative monitor/manager and OSD specs, and checks orchestrator device inventory for an exact available/unrejected OSD device before submitting OSD specs. The Ceph upstream documentation defines these service specs and availability checks; they are not a guarantee of disk safety and do not wipe devices. Specifications report `changed: false`, not actual cluster change state. Existing pools are checked for the requested `pg_num`; conflicting values fail rather than being changed. Ceph's asynchronous convergence, recovery after partial application, quorum and HA remain unverified. Do not use for production clusters. See [the maturity roadmap](docs/ROADMAP.md) for evidence gates.

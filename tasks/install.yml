@@ -30,6 +30,8 @@
       - "{{ hostvars[inventory_hostname].ansible_host }}"
       - "--cluster-network"
       - "{{ iac_blueprint.ceph.cluster_network }}"
+      - "--image"
+      - "{{ ceph_container_image }}"
     creates: "/etc/ceph/ceph.conf"
   when: iac_blueprint.ceph.cluster_network is defined
 
@@ -55,6 +57,22 @@
   changed_when: true
   when: item not in (ceph_host_list.stdout | from_json | map(attribute='hostname') | list)
 
+- name: "Wait for each declared host to be registered with the orchestrator"
+  ansible.builtin.command:
+    argv: ["ceph", "orch", "host", "ls", "--format", "json"]
+  register: ceph_registered_hosts
+  changed_when: false
+  retries: 12
+  delay: 5
+  until: >-
+    (iac_resource in (ceph_registered_hosts.stdout | from_json | map(attribute='hostname') | list))
+  loop: >-
+    {{ (iac_blueprint.ceph.monitors
+        + (iac_blueprint.ceph.osds | default([]) | map(attribute='host') | list))
+       | unique }}
+  loop_control:
+    loop_var: iac_resource
+
 - name: "Converge monitor daemon placement"
   ansible.builtin.command:
     argv:
@@ -76,6 +94,34 @@
       - "-"
     stdin: "{{ {'service_type': 'mgr', 'placement': {'hosts': iac_blueprint.ceph.monitors}} | to_json }}"
   changed_when: false
+
+- name: "Read orchestrator OSD device inventory before provisioning"
+  ansible.builtin.command:
+    argv: ["ceph", "orch", "device", "ls", "--format", "json"]
+  register: ceph_osd_device_inventory
+  changed_when: false
+  when:
+    - iac_blueprint.ceph.osds | default([]) | length > 0
+    - iac_blueprint.ceph.allow_osd_provisioning | default(false)
+
+- name: "Reject OSD devices not reported available by cephadm"
+  ansible.builtin.assert:
+    that:
+      - >-
+        (ceph_osd_device_inventory.stdout | from_json
+         | selectattr('hostname', 'equalto', iac_resource.host)
+         | selectattr('path', 'equalto', iac_resource.device)
+         | selectattr('available', 'equalto', true)
+         | selectattr('rejected_reasons', 'equalto', []) | list | length) == 1
+    fail_msg: >-
+      Refusing OSD provisioning for {{ iac_resource.host }}:{{ iac_resource.device }}:
+      cephadm must report exactly one matching device as available with no rejection reasons.
+  loop: "{{ iac_blueprint.ceph.osds | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
+  when:
+    - iac_blueprint.ceph.osds | default([]) | length > 0
+    - iac_blueprint.ceph.allow_osd_provisioning | default(false)
 
 - name: "Apply declarative specifications for declared OSD devices"
   ansible.builtin.command:
@@ -105,6 +151,38 @@
     argv: ["ceph", "osd", "pool", "ls", "--format", "json"]
   register: ceph_pool_list
   changed_when: false
+
+- name: "Read PG count for each declared pool that already exists"
+  ansible.builtin.command:
+    argv:
+      - "ceph"
+      - "osd"
+      - "pool"
+      - "get"
+      - "{{ iac_resource.name }}"
+      - "pg_num"
+      - "--format"
+      - "json"
+  register: ceph_pool_properties
+  changed_when: false
+  loop: "{{ iac_blueprint.ceph.pools | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
+  when: iac_resource.name in (ceph_pool_list.stdout | from_json)
+
+- name: "Reject existing pools with a conflicting PG count"
+  ansible.builtin.assert:
+    that:
+      - (iac_resource.stdout | from_json).pg_num == (iac_resource.iac_resource.pg_num | default(32))
+    fail_msg: >-
+      Existing pool {{ iac_resource.iac_resource.name }} has pg_num
+      {{ (iac_resource.stdout | from_json).pg_num }}, but the blueprint requests
+      {{ iac_resource.iac_resource.pg_num | default(32) }}. Pool properties are
+      not changed automatically.
+  loop: "{{ ceph_pool_properties.results | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
+  when: not iac_resource.skipped | default(false)
 
 - name: "Create declared pools"
   ansible.builtin.command:

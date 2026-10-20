@@ -26,7 +26,7 @@
             #!/bin/sh
             case "$*" in
               version) printf 'cephadm version\n' >> /tmp/ceph-mock.log ;;
-              'bootstrap --mon-ip ceph-install-mock --cluster-network 10.20.0.0/24')
+              'bootstrap --mon-ip ceph-install-mock --cluster-network 10.20.0.0/24 --image quay.io/ceph/ceph:v20.2.4')
                 printf 'cephadm %s\n' "$*" >> /tmp/ceph-mock.log
               mkdir -p /etc/ceph
               touch /etc/ceph/ceph.conf
@@ -40,10 +40,13 @@
               "orch host ls --format json")
                 [ -f /tmp/ceph-mock-hosts ] || : > /tmp/ceph-mock-hosts
                 printf '['; separator=; while IFS= read -r host; do printf '%s{"hostname":"%s"}' "$separator" "$host"; separator=,; done < /tmp/ceph-mock-hosts; printf ']\n' ;;
+              "orch device ls --format json")
+                if [ -f /tmp/ceph-mock-device-rejected ]; then printf '[{"hostname":"ceph-install-mock","path":"/dev/sdb","available":false,"rejected_reasons":["Has a FileSystem"]}]\n'; else printf '[{"hostname":"ceph-install-mock","path":"/dev/sdb","available":true,"rejected_reasons":[]}]\n'; fi ;;
               "orch host add ceph-b ceph-b") printf 'host-add ceph-b\n' >> /tmp/ceph-mock.log; grep -qxF ceph-b /tmp/ceph-mock-hosts || echo ceph-b >> /tmp/ceph-mock-hosts ;;
               "orch host add ceph-c ceph-c") printf 'host-add ceph-c\n' >> /tmp/ceph-mock.log; grep -qxF ceph-c /tmp/ceph-mock-hosts || echo ceph-c >> /tmp/ceph-mock-hosts ;;
               "orch apply -i -") spec=$(cat); SPEC="$spec" python3 -c 'import json,os,re,sys; x=json.loads(os.environ["SPEC"]); common={"placement":{"hosts":["ceph-install-mock","ceph-b","ceph-c"]}}; kind=x.get("service_type"); valid=(kind in ("mon","mgr") and x==dict(common,service_type=kind)) or (kind=="osd" and re.fullmatch(r"device_[0-9a-f]{64}",x.get("service_id","")) and x=={"service_type":"osd","service_id":x["service_id"],"placement":{"hosts":["ceph-install-mock"]},"spec":{"data_devices":{"paths":["/dev/sdb"]}}}); sys.exit(0 if valid else 2)' || { echo "unexpected service spec: $spec" >&2; exit 2; }; compact=$(printf '%s' "$spec" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin),separators=(",",":")))'); printf 'spec %s\n' "$compact" >> /tmp/ceph-mock.log ;;
               "osd pool ls --format json") [ -f /tmp/ceph-mock-pools ] || : > /tmp/ceph-mock-pools; awk 'BEGIN {printf "["} {printf "%s\"%s\"", sep, $0; sep=","} END {print "]"}' /tmp/ceph-mock-pools ;;
+              "osd pool get test-pool pg_num --format json") printf '{"pool":"test-pool","pool_id":1,"pg_num":16}\n' ;;
               "osd pool create test-pool 16") printf 'ceph %s\n' "$*" >> /tmp/ceph-mock.log; grep -qxF test-pool /tmp/ceph-mock-pools || echo test-pool >> /tmp/ceph-mock-pools ;;
               *) echo "unexpected ceph arguments: $*" >&2; exit 2 ;;
             esac
@@ -67,3 +70,28 @@
       loop: [1, 2]
       loop_control:
         loop_var: install_pass
+    - name: "Switch device inventory to rejected state"
+      ansible.builtin.file:
+        path: "/tmp/ceph-mock-device-rejected"
+        state: touch
+        mode: "0644"
+    - name: "Require rejected OSD device preflight to stop provisioning"
+      block:
+        - name: "Attempt install with unavailable OSD device"
+          ansible.builtin.include_role:
+            name: ansible-iac-role-ceph
+          vars:
+            state: "install"
+            iac_blueprint:
+              ceph:
+                cluster_name: "ceph"
+                monitors: ["ceph-install-mock", "ceph-b", "ceph-c"]
+                cluster_network: "10.20.0.0/24"
+                allow_osd_provisioning: true
+                osds: [{ host: "ceph-install-mock", device: "/dev/sdb" }]
+                pools: [{ name: "test-pool", pg_num: 16 }]
+      rescue:
+        - name: "Assert rejected device failure is explicit"
+          ansible.builtin.assert:
+            that:
+              - "'Refusing OSD provisioning' in ansible_failed_result.msg"

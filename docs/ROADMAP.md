@@ -18,6 +18,27 @@ RC readiness; planned work earns no points.
 | Documentation and release hygiene | 10 | 8 | README, testing guidance/limitations, and this evidence-based roadmap document role usage and boundaries. Supported-platform/dependency policy and complete contribution, release, and upgrade guidance remain gaps. |
 | **Total** | **100** | **52** | **Alpha (floor)** |
 
+## Progress since the assessed commit
+
+The implementation now pins bootstrap to the official Tentacle image
+`quay.io/ceph/ceph:v20.2.4`, checks orchestrator device inventory before each
+OSD spec, and waits up to 60 seconds for declared hosts to appear in
+`ceph orch host ls`. The mock scenario exercises both accepted and rejected
+device inventory. These are implementation and mock-contract improvements,
+not evidence of a live Ceph deployment or an updated maturity score.
+
+Version source: [Ceph Tentacle release notes](https://docs.ceph.com/en/latest/releases/tentacle/)
+identify v20.2.4 (released 2026-08-19) as the current stable Tentacle release
+and recommend it. Service-spec and device-availability behavior is based on
+the [Tentacle OSD service documentation](https://docs.ceph.com/en/tentacle/cephadm/services/osd)
+and [cephadm deployment documentation](https://docs.ceph.com/en/tentacle/cephadm/install).
+The role does not perform an OS-repository install: cephadm remains a target
+prerequisite and the pinned image specifies the Ceph daemon version.
+
+Rocky Linux 9 is retained as intended matrix coverage, but upstream Ceph OS
+compatibility evidence is still insufficient to claim it supported; Rocky 10
+is intended and has no test evidence yet. Both remain unverified for live use.
+
 ## Milestones and acceptance gates
 
 Each gate requires committed evidence and refreshed README/TESTING claims. A

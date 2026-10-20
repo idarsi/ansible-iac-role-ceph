@@ -8,7 +8,9 @@
 ###############################################################################
 
 iac_supported_os:
-  - { name: "Rocky", versions: ["9"] }
-cephadm_minimum_version: "19"
+  - { name: "Rocky", versions: ["9", "10"] }
+ceph_version: "20.2.4"
+ceph_container_image: "quay.io/ceph/ceph:v{{ ceph_version }}"
+cephadm_minimum_version: "20"
 cephadm_cluster_name: "ceph"
 iac_ceph_osd_service_id: "{{ 'device_' ~ ((iac_resource.host ~ '|' ~ iac_resource.device) | hash('sha256')) }}"
