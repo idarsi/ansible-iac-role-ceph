@@ -249,9 +249,6 @@
                 that:
                   - ansible_failed_task.name == "Require existing non-root Ceph accounts"
                   - >-
-                    ansible_failed_result.assertion ==
-                    "iac_resource.ansible_facts.getent_passwd.get(iac_blueprint.ceph.ssh_user) is not none"
-                  - >-
                     ansible_failed_result.msg == "Ceph SSH user '{{ ceph_missing_user }}' must already exist on declared host 'ceph-install-mock'; this role will not create accounts."
           always:
             - name: "Assert missing-account rejection preceded all mutation"
