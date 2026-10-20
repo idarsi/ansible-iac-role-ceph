@@ -13,10 +13,18 @@ provisioner:
   inventory:
     host_vars:
       ceph-install-mock:
-        ansible_connection: local
+        ansible_connection: containers.podman.podman
         ansible_facts:
           distribution: Rocky
           distribution_major_version: "9"
-        ansible_host: "192.0.2.10"
+        ansible_host: "ceph-install-mock"
 verifier:
   name: ansible
+scenario:
+  test_sequence:
+    - destroy
+    - syntax
+    - create
+    - converge
+    - verify
+    - destroy

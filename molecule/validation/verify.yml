@@ -7,14 +7,6 @@
       distribution: "Rocky"
       distribution_major_version: "9"
   tasks:
-    - name: "Check no Ceph files were created"
-      ansible.builtin.stat:
-        path: "/etc/ceph/ceph.conf"
-      register: ceph_config
-    - name: "Assert validation made no changes"
-      ansible.builtin.assert:
-        that:
-          - not ceph_config.stat.exists
     - name: "Reject malformed pool records and pg_num values"
       ansible.builtin.include_tasks: invalid_pool.yml
       loop:

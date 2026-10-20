@@ -7,10 +7,11 @@
       ansible.builtin.command: "cat /tmp/ceph-mock.log"
       register: ceph_mock_log
       changed_when: false
-    - name: "Assert bootstrap runs once and specs are applied on each pass"
+    - name: "Assert exact bootstrap command and submitted service specs"
       ansible.builtin.assert:
         that:
-          - ceph_mock_log.stdout_lines | select('match', '^cephadm bootstrap ') | list | length == 1
-          - ceph_mock_log.stdout_lines | select('match', '^ceph orch apply -i -') | list | length == 4
-          - ceph_mock_log.stdout is search('"service_type":"mon"')
-          - ceph_mock_log.stdout is search('"service_type":"mgr"')
+          - ceph_mock_log.stdout_lines | select('equalto', 'cephadm bootstrap --mon-ip ceph-install-mock --cluster-network 10.20.0.0/24') | list | length == 1
+          - ceph_mock_log.stdout_lines | select('equalto', 'spec {"service_type":"mon","placement":{"hosts":["ceph-install-mock","ceph-b","ceph-c"]}}') | list | length == 2
+          - ceph_mock_log.stdout_lines | select('equalto', 'spec {"service_type":"mgr","placement":{"hosts":["ceph-install-mock","ceph-b","ceph-c"]}}') | list | length == 2
+          - ceph_mock_log.stdout_lines | select('match', '^spec \{"service_type":"osd","service_id":"device_[0-9a-f]{64}","placement":\{"hosts":\["ceph-install-mock"\]\},"spec":\{"data_devices":\{"paths":\["/dev/sdb"\]\}\}\}$') | list | length == 2
+          - ceph_mock_log.stdout_lines | select('equalto', 'ceph osd pool create test-pool 16') | list | length == 1
