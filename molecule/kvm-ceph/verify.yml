@@ -5,6 +5,7 @@
   gather_facts: false
   vars:
     molecule_config: "{{ lookup('file', lookup('env', 'MOLECULE_FILE')) | from_yaml }}"
+    disk_suffix: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') | hash('sha256') | truncate(8, true, '') }}"
   tasks:
     - name: Require the configured OSD volume pool to be active
       ansible.builtin.shell: |
@@ -15,6 +16,21 @@
       environment:
         LIBVIRT_URI: "{{ molecule_config.driver.libvirt_uri | default('qemu:///system') }}"
         OSD_VOLUME_POOL: "{{ molecule_config.scenario.osd_volume_pool | default('idarsi-test-bases') }}"
+      changed_when: false
+
+    - name: Require both scenario-owned OSD volumes in the configured pool
+      ansible.builtin.shell: |
+        set -euo pipefail
+        for vm in ceph-b ceph-c; do
+          volume="idarsi-ceph-${DISK_SUFFIX}-${vm}-osd.qcow2"
+          virsh --connect "$LIBVIRT_URI" vol-info --pool "$OSD_VOLUME_POOL" "$volume" >/dev/null
+        done
+      args:
+        executable: /bin/bash
+      environment:
+        LIBVIRT_URI: "{{ molecule_config.driver.libvirt_uri | default('qemu:///system') }}"
+        OSD_VOLUME_POOL: "{{ molecule_config.scenario.osd_volume_pool | default('idarsi-test-bases') }}"
+        DISK_SUFFIX: "{{ disk_suffix }}"
       changed_when: false
 
 - name: Verify real Ceph cluster convergence
