@@ -2,7 +2,8 @@
 
 ## Current reassessment
 
-At the current working baseline, this role is **Alpha / 41% RC Readiness**.
+This assessment is for commit `79df116` (`test: assert validation safety and host convergence`).
+At that assessed HEAD, this role is **Alpha / 52% RC Readiness (floor)**.
 The score is an engineering evidence score, not a production-suitability rating.
 The scorecard below records current evidence and the gates required for full
 RC readiness; planned work earns no points.
@@ -10,24 +11,25 @@ RC readiness; planned work earns no points.
 | Score area | Maximum | Current | Evidence and gap |
 |---|---:|---:|---|
 | Scope and public contract | 12 | 9 | Blueprint and state limits are documented; platform and dependency/support evidence is incomplete. |
-| Functional completeness | 20 | 10 | Bootstrap and declared operations exist; platform, recovery, and asynchronous convergence remain unverified. |
-| Validation and safety | 20 | 12 | Input preflight and explicit OSD opt-in exist; physical disk safety and check-mode behavior are not established. |
+| Functional completeness | 20 | 10 | Bootstrap and declared operations exist; actual Ceph execution, platform, recovery, and asynchronous convergence remain unverified. |
+| Validation and safety | 20 | 14 | Input preflight and explicit OSD opt-in are exercised by passing validation and mock-install scenarios; physical disk safety and check-mode behavior are not established. |
 | Convergence and recovery | 13 | 5 | Bootstrap/pool guards exist; orchestration specs are reapplied and external convergence is not observed. |
-| Automated testing and CI | 25 | 2 | Validation coverage exists; previously there was no functional install evidence, useful idempotence proof, platform matrix, or evidenced required CI. |
+| Automated testing and CI | 25 | 11 | Validation and install-mock Molecule scenarios pass, including command/spec assertions and a mocked repeat-install pass; the mock does not prove true idempotence, live cluster HA/OSD/device safety, or actual execution. Platform matrix and evidenced required CI are also missing. |
 | Documentation and release hygiene | 10 | 3 | README and test limitations exist; contribution/release and support evidence remain incomplete. |
-| **Total** | **100** | **41** | **Alpha** |
+| **Total** | **100** | **52** | **Alpha (floor)** |
 
 ## Milestones and acceptance gates
 
 Each gate requires committed evidence and refreshed README/TESTING claims. A
 mock is useful for command contract testing but cannot substitute for a cluster.
 
-1. **Mocked install contract (focused, no cluster):** use temporary stub
+1. **Mocked install contract (focused, no cluster) — complete at assessed HEAD:** use temporary stub
    `cephadm` and `ceph` executables to inspect bootstrap arguments and generated
    JSON service specs, and exercise two install passes. Verify local bootstrap
    and pool guards, and accurately report task changes. Never mock device
    discovery/safety, claim OSD data safety, quorum, or HA. This is a narrow
-   functional test only.
+   functional test only. The validation and install-mock Molecule scenarios
+   passed; this is not evidence of live Ceph behavior or true idempotence.
 2. **Command/change semantics:** capture actual `ceph orch apply` effects or
    expose a reliable comparison workflow before claiming changed-state
    accuracy or idempotence for placement/OSD specs. Verify host registration

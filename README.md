@@ -1,5 +1,5 @@
 > **Maturity State: Alpha**<br>
-> **RC Readiness: 41%**
+> **RC Readiness: 52% (floor)**
 
 ANSIBLE-IAC-ROLE-CEPH
 ===============================
@@ -32,7 +32,7 @@ Supported platforms
 
 | Operating system                  | Supported versions                | Automated test coverage                   |
 |-----------------------------------|-----------------------------------|-------------------------------------------|
-| Rocky Linux                       | 9                                 | Validation scenario only (not run here; platform claim not independently established) |
+| Rocky Linux                       | 9                                 | Validation and install-mock Molecule scenarios passed; live Rocky 9 support remains unverified |
 
 Supported states
 ----------------
