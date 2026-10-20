@@ -11,7 +11,8 @@
     ceph_missing_user: >-
       ceph-missing-{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') | hash('sha1') | truncate(10, true, '') }}
   environment:
-    PATH: "/tmp/ceph-mock-state/bin:/usr/local/bin:/usr/bin:/bin"
+    PATH: >-
+      /tmp/ceph-mock-state/bin:/usr/local/sbin:/usr/sbin:/usr/local/bin:/usr/bin:/bin
   tasks:
     - name: "Reset namespaced mock state"
       ansible.builtin.shell: |
@@ -34,8 +35,11 @@
       loop: ["ceph-b", "ceph-c"]
     - name: "Prepare the pre-existing mock SSH account on declared hosts"
       ansible.builtin.shell: |
+        set -e
         dnf -y install sudo >/dev/null
-        id molecule >/dev/null 2>&1 || useradd --create-home molecule
+        if ! /usr/bin/getent passwd molecule >/dev/null; then
+          /usr/sbin/useradd --create-home molecule
+        fi
         printf 'molecule ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/molecule
         chmod 0440 /etc/sudoers.d/molecule
       changed_when: false
