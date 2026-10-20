@@ -36,6 +36,7 @@
         KVM_MEMORY_MB: "{{ item.memory_mb | default(6144) }}"
         KVM_VCPUS: "{{ item.vcpus | default(2) }}"
         KVM_DISK_SIZE_GB: "{{ item.disk_size_gb | default(30) }}"
+        KVM_BASE_IMAGE_MODE: "off"
         KVM_INSTALL_TIMEOUT: "{{ item.install_timeout | default(3600) }}"
       loop: "{{ molecule_config.platforms }}"
       loop_control:
