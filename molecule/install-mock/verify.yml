@@ -12,7 +12,7 @@
         that:
           - ceph_mock_log.stdout_lines | select('equalto', 'cephadm --image quay.io/ceph/ceph:v20.2.4 bootstrap --mon-ip ceph-install-mock --cluster-network 10.20.0.0/24') | list | length == 1
           - ceph_mock_log.stdout_lines | select('equalto', 'cephadm shell -- ceph osd pool ls --format json') | list | length == 2
-          - ceph_mock_log.stdout_lines | select('equalto', 'cephadm shell -- ceph osd pool get test-pool pg_num --format json') | list | length == 2
+          - ceph_mock_log.stdout_lines | select('equalto', 'cephadm shell -- ceph osd pool get test-pool pg_num --format json') | list | length == 1
           - ceph_mock_log.stdout_lines | select('equalto', 'cephadm shell -- ceph orch host add ceph-b ceph-b') | list | length == 1
           - ceph_mock_log.stdout_lines | select('equalto', 'cephadm shell -- ceph orch host add ceph-c ceph-c') | list | length == 1
           - ceph_mock_log.stdout_lines | select('equalto', 'cephadm shell -- ceph orch host ls --format json') | list | length == 8
