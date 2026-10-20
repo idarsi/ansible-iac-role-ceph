@@ -8,7 +8,7 @@
     test_environment: "{{ lookup('env', 'IDARSI_TEST_ENVIRONMENT') }}"
     ephemeral: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}"
     scenario_directory: "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') }}"
-    kvm_base_dir: "{{ lookup('env', 'IDARSI_TEST_KVM_BASE_DIR') | default('/var/lib/libvirt/images/idarsi-test-bases', true) }}"
+    kvm_base_dir: "/var/lib/libvirt/images/idarsi-test-bases"
     disk_suffix: "{{ ephemeral | hash('sha256') | truncate(8, true, '') }}"
   tasks:
     - name: Require explicit destructive-test authorization
@@ -17,19 +17,51 @@
           - lookup('env', 'IDARSI_CEPH_KVM_DISPOSABLE') == 'YES_I_WILL_DESTROY_THESE_VMS_AND_DISKS'
           - test_environment | length > 0
           - ephemeral | length > 0
-          - kvm_base_dir.startswith('/')
           - molecule_config.platforms | map(attribute='name') | list == ['ceph-a', 'ceph-b', 'ceph-c']
         fail_msg: "This scenario destroys its isolated guests/disks; set the exact IDARSI_CEPH_KVM_DISPOSABLE acknowledgment."
+
+    - name: Validate canonical KVM base directory and reject symlink components
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import os, stat, sys
+            path = sys.argv[1]
+            current = ''
+            for component in path.split('/'):
+                if not component:
+                    continue
+                current += '/' + component
+                try:
+                    mode = os.lstat(current).st_mode
+                except FileNotFoundError:
+                    continue
+                if stat.S_ISLNK(mode):
+                    raise SystemExit(f"Refusing symlink path component: {current}")
+            if os.path.realpath(path) != path:
+                raise SystemExit(f"KVM base directory is not canonical: {path}")
+          - "{{ kvm_base_dir }}"
+      changed_when: false
+
+    - name: Reject unsafe characters in guest disk paths
+      ansible.builtin.assert:
+        that:
+          - "',' not in kvm_base_dir and '\n' not in kvm_base_dir"
+        fail_msg: "Guest disk paths must not contain commas or newlines."
 
     - name: Require scenario guest OS disk paths to be absent before creation
       ansible.builtin.stat:
         path: "{{ kvm_base_dir }}/molecule-{{ item }}-{{ disk_suffix }}.qcow2"
+        follow: false
       loop: ["ceph-a", "ceph-b", "ceph-c"]
       register: guest_disk_paths
 
     - name: Refuse to overwrite existing guest OS disks
       ansible.builtin.assert:
-        that: not item.stat.exists
+        that:
+          - not item.stat.exists
+          - not (item.stat.islnk | default(false))
         fail_msg: "Refusing to overwrite scenario guest OS disk {{ item.stat.path }}"
       loop: "{{ guest_disk_paths.results }}"
 
