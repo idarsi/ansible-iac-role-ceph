@@ -24,6 +24,6 @@ jobs:
       - name: Run mocked install contract scenario
         run: molecule test -s install-mock
       - name: Run production lint
-        run: ansible-lint --profile production
+        run: ansible-lint
       - name: Check example playbook syntax
         run: ansible-playbook --syntax-check -i docs/inventory-minimal.yml docs/playbook-example.yml

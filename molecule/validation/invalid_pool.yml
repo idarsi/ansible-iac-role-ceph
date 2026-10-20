@@ -27,7 +27,7 @@
       ansible.builtin.set_fact:
         invalid_pool_rejected: true
 
-- name: "Assert {{ invalid_pool_case.label }} was not accepted"
+- name: "Assert invalid pool case was not accepted ({{ invalid_pool_case.label }})"
   ansible.builtin.assert:
     that: invalid_pool_rejected | default(false)
     fail_msg: "Malformed pool case {{ invalid_pool_case.label }} unexpectedly passed validation"

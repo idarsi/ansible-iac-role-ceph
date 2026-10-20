@@ -15,7 +15,7 @@
         path: "/tmp/ceph-mock-bin"
         state: directory
         mode: "0755"
-    - name: "Install mock Ceph CLI commands"
+    - name: "Install mock Ceph CLI commands" # noqa: yaml[line-length]
       ansible.builtin.copy:
         dest: "{{ item.path }}"
         mode: "0755"
@@ -28,8 +28,9 @@
               version) printf 'cephadm version 20.2.4\n' ;;
               'bootstrap --mon-ip ceph-install-mock --cluster-network 10.20.0.0/24 --image quay.io/ceph/ceph:v20.2.4')
                 printf 'cephadm %s\n' "$*" >> /tmp/ceph-mock.log
-              mkdir -p /etc/ceph
-              touch /etc/ceph/ceph.conf
+                grep -qxF ceph-install-mock /tmp/ceph-mock-hosts || echo ceph-install-mock >> /tmp/ceph-mock-hosts
+                mkdir -p /etc/ceph
+                touch /etc/ceph/ceph.conf
                 ;;
               *) echo "unexpected cephadm arguments: $*" >&2; exit 2 ;;
             esac
@@ -51,10 +52,14 @@
               "osd pool create test-pool 16") printf 'ceph %s\n' "$*" >> /tmp/ceph-mock.log; grep -qxF test-pool /tmp/ceph-mock-pools || echo test-pool >> /tmp/ceph-mock-pools ;;
               *) echo "unexpected ceph arguments: $*" >&2; exit 2 ;;
             esac
-    - name: "Remove previous mock log"
-      ansible.builtin.file:
-        path: "{{ ceph_mock_log }}"
-        state: absent
+    - name: "Reset mock command and registry state"
+      ansible.builtin.shell: |
+        rm -f {{ ceph_mock_log }} /tmp/ceph-mock-hosts /tmp/ceph-mock-pools
+        rm -f /tmp/ceph-mock-device-rejected /tmp/ceph-mock-pool-conflict
+        rm -f /etc/ceph/ceph.conf
+        : > /tmp/ceph-mock-hosts
+        : > /tmp/ceph-mock-pools
+      changed_when: false
     - name: "Apply install twice"
       ansible.builtin.include_role:
         name: ansible-iac-role-ceph
@@ -71,6 +76,12 @@
       loop: [1, 2]
       loop_control:
         loop_var: install_pass
+    - name: "Save normal install command log"
+      ansible.builtin.copy:
+        src: "{{ ceph_mock_log }}"
+        dest: "/tmp/ceph-mock-install.log"
+        remote_src: true
+        mode: "0644"
     - name: "Switch device inventory to rejected state"
       ansible.builtin.file:
         path: "/tmp/ceph-mock-device-rejected"
@@ -101,7 +112,7 @@
         - name: "Assert pool conflict is reported"
           ansible.builtin.assert:
             that:
-              - "'Existing pool test-pool' in ansible_failed_result.msg"
+              - "'Existing pool test-pool' in (ansible_failed_result | string)"
     - name: "Require rejected OSD device preflight to stop provisioning"
       block:
         - name: "Clear pool conflict for device inventory check"
@@ -128,7 +139,7 @@
         - name: "Assert rejected device failure is explicit"
           ansible.builtin.assert:
             that:
-              - "'Refusing OSD provisioning' in ansible_failed_result.msg"
+              - "'Refusing OSD provisioning' in (ansible_failed_result | string)"
     - name: "Assert pool conflict occurred before daemon apply"
       ansible.builtin.command: "cat {{ ceph_mock_log }}"
       register: conflict_log
