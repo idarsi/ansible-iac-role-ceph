@@ -25,7 +25,7 @@ The role manages:
 The role does not manage:
 
 - Ceph/cephadm package installation, repositories, firewall, time sync, or external PKI.
-- OSD provisioning, disk wiping, upgrades, removal, or a verified functioning HA deployment.
+- OSD provisioning, disk wiping, upgrades, removal, monitor daemon placement, or a verified functioning HA deployment.
 
 Supported platforms
 -------------------
@@ -40,7 +40,7 @@ Supported states
 | State               | Behaviour                     |
 |---------------------|-------------------------------|
 | validate            | Validates blueprint only; makes no target changes. |
-| install             | Attempts bootstrap, host registration, and pool creation; does not provision OSDs. |
+| install             | Attempts bootstrap, host registration, and pool creation; does not provision OSDs or establish HA. |
 
 Quick start
 -----------
@@ -82,14 +82,16 @@ Top-level blueprint variables
 
 | Variable          | Required (yes/no) | Default       | Short description           |
 |-------------------|-------------------|---------------|-----------------------------|
-| cluster_name      | yes               | none          | Intended cluster name; currently not used to configure bootstrap. |
+| cluster_name      | yes               | none          | Cluster name; currently only `ceph` is supported. |
 | monitors          | yes               | none          | Odd-sized list of >=3 inventory hosts including bootstrap host. |
 | cluster_network   | install            | none          | Explicit private cluster CIDR; required for bootstrap. |
-| osds              | no                | []            | Explicit host/device records; install currently rejects non-empty list. |
+| osds              | no                | []            | Explicit host/device records; non-empty lists validate but install rejects them because provisioning is not implemented. |
 | pools             | no                | []            | Pools to create, with optional pg_num (default 32). |
 | allow_osd_device_wipe | no            | false         | Guard setting; does not enable OSD provisioning in this release. |
 
 Configuration examples
 ----------------------
 
-Only use install in a disposable, reviewed environment after testing cephadm behavior manually. Bootstrap only runs when `/etc/ceph/ceph.conf` is absent. This initial implementation does not reconcile monitor daemon placement or offer proven retry/idempotence behavior for cluster operations. `monitors` validation establishes declared topology only; it does not establish quorum or high availability. OSD tasks intentionally fail rather than risk data loss. Do not use for production clusters.
+**Full high-availability deployment, including OSD provisioning, is not implemented.** A non-empty OSD list is validated but install rejects it before making host changes. Do not treat this role as satisfying a full HA-cluster request.
+
+Only use install in a disposable, reviewed environment after testing cephadm behavior manually. Bootstrap only runs when `/etc/ceph/ceph.conf` is absent. This initial implementation does not reconcile monitor daemon placement or offer proven retry/idempotence behavior for cluster operations. `monitors` validation establishes declared topology only; it does not establish quorum or high availability. Do not use for production clusters.

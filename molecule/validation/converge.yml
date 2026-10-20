@@ -10,8 +10,10 @@
         state: "validate"
         iac_blueprint:
           ceph:
-            cluster_name: "storage"
+            cluster_name: "ceph"
             monitors: ["ceph-validation", "ceph-b", "ceph-c"]
             cluster_network: "10.20.0.0/24"
             osds: []
-            pools: []
+            pools:
+              - name: "validation-pool"
+                pg_num: 16

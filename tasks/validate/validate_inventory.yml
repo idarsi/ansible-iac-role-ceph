@@ -25,7 +25,8 @@
       - iac_blueprint.ceph.cluster_name is defined
       - iac_blueprint.ceph.cluster_name is string
       - iac_blueprint.ceph.cluster_name | length > 0
-    fail_msg: "ceph.cluster_name must be a non-empty string"
+      - iac_blueprint.ceph.cluster_name == "ceph"
+    fail_msg: "ceph.cluster_name must be 'ceph'; custom cluster names are unsupported"
 
 - name: "Checking monitor topology"
   ansible.builtin.assert:
@@ -43,10 +44,21 @@
     that:
       - iac_blueprint.ceph.osds | default([]) | type_debug == "list"
       - >-
+        (iac_blueprint.ceph.osds | default([]) | select('mapping') | list | length)
+        == (iac_blueprint.ceph.osds | default([]) | length)
+      - >-
         (iac_blueprint.ceph.osds | default([]) | selectattr('host', 'defined') | list | length)
         == (iac_blueprint.ceph.osds | default([]) | length)
       - >-
         (iac_blueprint.ceph.osds | default([]) | selectattr('device', 'defined') | list | length)
+        == (iac_blueprint.ceph.osds | default([]) | length)
+      - >-
+        (iac_blueprint.ceph.osds | default([]) | selectattr('host', 'defined')
+        | selectattr('host', 'string') | rejectattr('host', 'equalto', '') | list | length)
+        == (iac_blueprint.ceph.osds | default([]) | length)
+      - >-
+        (iac_blueprint.ceph.osds | default([]) | selectattr('device', 'defined')
+        | selectattr('device', 'string') | rejectattr('device', 'equalto', '') | list | length)
         == (iac_blueprint.ceph.osds | default([]) | length)
       - >-
         (iac_blueprint.ceph.osds | default([]) | selectattr('host', 'in', iac_blueprint.ceph.monitors) | list | length)
@@ -61,12 +73,27 @@
     that:
       - iac_blueprint.ceph.pools | default([]) | type_debug == "list"
       - >-
+        (iac_blueprint.ceph.pools | default([]) | select('mapping') | list | length)
+        == (iac_blueprint.ceph.pools | default([]) | length)
+      - >-
         (iac_blueprint.ceph.pools | default([]) | selectattr('name', 'defined') | list | length)
         == (iac_blueprint.ceph.pools | default([]) | length)
       - >-
         (iac_blueprint.ceph.pools | default([]) | map(attribute='name') | unique | list | length)
         == (iac_blueprint.ceph.pools | default([]) | length)
-    fail_msg: "ceph.pools must contain uniquely named pools"
+      - >-
+        (iac_blueprint.ceph.pools | default([]) | selectattr('name', 'defined')
+        | selectattr('name', 'string') | rejectattr('name', 'equalto', '') | list | length)
+        == (iac_blueprint.ceph.pools | default([]) | length)
+      - >-
+        (iac_blueprint.ceph.pools | default([]) | selectattr('pg_num', 'defined')
+        | selectattr('pg_num', 'number') | list | length)
+        == (iac_blueprint.ceph.pools | default([]) | selectattr('pg_num', 'defined') | list | length)
+      - >-
+        (iac_blueprint.ceph.pools | default([]) | selectattr('pg_num', 'defined')
+        | selectattr('pg_num', 'number') | selectattr('pg_num', 'gt', 0) | list | length)
+        == (iac_blueprint.ceph.pools | default([]) | selectattr('pg_num', 'defined') | list | length)
+    fail_msg: "ceph.pools must contain unique non-empty names and positive numeric pg_num values"
 
 - name: "Checking destructive OSD opt-in"
   ansible.builtin.assert:

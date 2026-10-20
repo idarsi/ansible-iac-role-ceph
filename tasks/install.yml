@@ -68,5 +68,6 @@
       - "{{ item.name }}"
       - "{{ item.pg_num | default(32) }}"
   loop: "{{ iac_blueprint.ceph.pools | default([]) }}"
-  changed_when: item.name not in (ceph_pool_list.stdout | from_json)
+  register: ceph_pool_create
+  changed_when: ceph_pool_create.rc == 0
   when: item.name not in (ceph_pool_list.stdout | from_json)
