@@ -1,4 +1,22 @@
 ---
+- name: Prepare disposable Ceph guests
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Set guest hostname to its inventory name
+      ansible.builtin.hostname:
+        name: "{{ inventory_hostname }}"
+
+    - name: Set inventory hostname mappings for all Ceph guests
+      ansible.builtin.blockinfile:
+        path: /etc/hosts
+        marker: "# {mark} MOLECULE CEPH HOSTS"
+        block: |-
+          {% for guest in groups['all'] | sort %}
+          {{ hostvars[guest]['ansible_host'] }} {{ guest }}
+          {% endfor %}
+
 - name: Bootstrap and converge disposable Ceph cluster
   hosts: ceph-a
   become: true
