@@ -32,10 +32,9 @@ molecule test -s kvm-ceph
 
 The exact acknowledgment is required by both create and destroy. The scenario
 uses static addresses `.21`–`.23` on the shared NAT network and creates only
-two named ephemeral OSD volumes in the scenario-configured, active
-`idarsi-test-bases` pool (override `scenario.osd_volume_pool` in
-`molecule/kvm-ceph/molecule.yml` if needed); it removes those volumes and the
-three shared-lifecycle guests at teardown. Never run it against valuable VMs
+two named ephemeral OSD volumes in the active `idarsi-test-bases` pool
+(override with `IDARSI_CEPH_OSD_VOLUME_POOL` if needed); it removes those
+volumes and the three shared-lifecycle guests at teardown. Never run it against valuable VMs
 or storage. Repeat separately with Rocky 10 by setting the install source to
 its ISO; Rocky 10 remains unverified and is not claimed as live-supported by
 this scenario definition alone.

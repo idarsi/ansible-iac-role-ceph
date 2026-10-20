@@ -67,7 +67,7 @@
         executable: /bin/bash
       environment:
         LIBVIRT_URI: "{{ molecule_config.driver.libvirt_uri | default('qemu:///system') }}"
-        OSD_VOLUME_POOL: "{{ molecule_config.scenario.osd_volume_pool | default('idarsi-test-bases') }}"
+        OSD_VOLUME_POOL: "{{ lookup('env', 'IDARSI_CEPH_OSD_VOLUME_POOL') | default('idarsi-test-bases', true) }}"
       changed_when: false
 
     - name: Create and attach only the two scenario-owned OSD volumes
@@ -88,5 +88,5 @@
         MOLECULE_EPHEMERAL_DIRECTORY: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}"
         DISK_SUFFIX: "{{ disk_suffix }}"
         LIBVIRT_URI: "{{ molecule_config.driver.libvirt_uri | default('qemu:///system') }}"
-        OSD_VOLUME_POOL: "{{ molecule_config.scenario.osd_volume_pool | default('idarsi-test-bases') }}"
+        OSD_VOLUME_POOL: "{{ lookup('env', 'IDARSI_CEPH_OSD_VOLUME_POOL') | default('idarsi-test-bases', true) }}"
       changed_when: true
