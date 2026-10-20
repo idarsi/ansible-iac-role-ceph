@@ -26,3 +26,11 @@
         - { label: "zero pg_num", value: { name: "bad-zero", pg_num: 0 } }
       loop_control:
         loop_var: invalid_pool_case
+    - name: "Reject malformed or undeclared OSD host/device records"
+      ansible.builtin.include_tasks: invalid_osd.yml
+      loop:
+        - { label: "OSD host not in inventory", value: [{ host: "not-in-inventory", device: "/dev/sdb" }] }
+        - { label: "device path not absolute", value: [{ host: "ceph-validation", device: "sdb" }] }
+        - { label: "duplicate device path", value: [{ host: "ceph-validation", device: "/dev/sdb" }, { host: "ceph-validation", device: "/dev/sdb" }] }
+      loop_control:
+        loop_var: invalid_osd_case

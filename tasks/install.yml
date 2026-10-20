@@ -39,7 +39,7 @@
   register: ceph_host_list
   changed_when: false
 
-- name: "Register non-bootstrap monitor hosts"
+- name: "Register declared non-bootstrap Ceph hosts"
   ansible.builtin.command:
     argv:
       - "ceph"
@@ -48,7 +48,7 @@
       - "add"
       - "{{ item }}"
       - "{{ hostvars[item].ansible_host | default(item) }}"
-  loop: "{{ iac_blueprint.ceph.monitors | difference([inventory_hostname]) }}"
+  loop: "{{ (iac_blueprint.ceph.monitors + (iac_blueprint.ceph.osds | default([]) | map(attribute='host') | list)) | unique | difference([inventory_hostname]) }}"
   changed_when: true
   when: item not in (ceph_host_list.stdout | from_json | map(attribute='hostname') | list)
 
@@ -58,10 +58,10 @@
       - "ceph"
       - "orch"
       - "apply"
-      - "mon"
-      - "--placement"
-      - "hosts={{ iac_blueprint.ceph.monitors | join(',') }}"
-  changed_when: true
+      - "-i"
+      - "-"
+    stdin: "{{ {'service_type': 'mon', 'placement': {'hosts': iac_blueprint.ceph.monitors}} | to_json }}"
+  changed_when: false
 
 - name: "Converge manager daemon placement"
   ansible.builtin.command:
@@ -69,22 +69,22 @@
       - "ceph"
       - "orch"
       - "apply"
-      - "mgr"
-      - "--placement"
-      - "hosts={{ iac_blueprint.ceph.monitors | join(',') }}"
-  changed_when: true
+      - "-i"
+      - "-"
+    stdin: "{{ {'service_type': 'mgr', 'placement': {'hosts': iac_blueprint.ceph.monitors}} | to_json }}"
+  changed_when: false
 
-- name: "Provision explicitly declared OSD devices"
+- name: "Apply declarative specifications for declared OSD devices"
   ansible.builtin.command:
     argv:
       - "ceph"
       - "orch"
-      - "daemon"
-      - "add"
-      - "osd"
-      - "{{ item.host }}:{{ item.device }}"
+      - "apply"
+      - "-i"
+      - "-"
+    stdin: "{{ {'service_type': 'osd', 'service_id': ('device_' ~ (item.host ~ '_' ~ item.device | regex_replace('[^A-Za-z0-9_]', '_'))), 'placement': {'hosts': [item.host]}, 'spec': {'data_devices': {'paths': [item.device]}}} | to_json }}"
   loop: "{{ iac_blueprint.ceph.osds | default([]) }}"
-  changed_when: true
+  changed_when: false
   when: iac_blueprint.ceph.osds | default([]) | length > 0
 
 - name: "Read existing pools"

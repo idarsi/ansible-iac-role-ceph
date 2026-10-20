@@ -1,0 +1,19 @@
+---
+- name: "Reject invalid declared OSD device"
+  ansible.builtin.include_role:
+    name: "{{ playbook_dir }}/../.."
+  vars:
+    state: "validate"
+    iac_blueprint:
+      ceph:
+        cluster_name: "ceph"
+        monitors: ["ceph-validation", "ceph-b", "ceph-c"]
+        osds: "{{ invalid_osd_case.value }}"
+        pools: []
+  register: invalid_osd_result
+  failed_when: false
+
+- name: "Assert OSD host/device constraint is rejected"
+  ansible.builtin.assert:
+    that:
+      - invalid_osd_result.failed

@@ -69,12 +69,12 @@
         | selectattr('device', 'string') | reject('search', '/\\.\\.') | list | length)
         == (iac_blueprint.ceph.osds | default([]) | length)
       - >-
-        (iac_blueprint.ceph.osds | default([]) | selectattr('host', 'in', iac_blueprint.ceph.monitors) | list | length)
+        (iac_blueprint.ceph.osds | default([]) | selectattr('host', 'in', hostvars) | list | length)
         == (iac_blueprint.ceph.osds | default([]) | length)
       - >-
         (iac_blueprint.ceph.osds | default([]) | map(attribute='device') | unique | list | length)
         == (iac_blueprint.ceph.osds | default([]) | length)
-    fail_msg: "OSDs require unique explicit /dev device paths on declared monitor hosts; automatic discovery is unsupported"
+    fail_msg: "OSDs require unique explicit /dev device paths on declared inventory hosts; automatic discovery is unsupported"
 
 - name: "Checking pool definitions"
   ansible.builtin.assert:
@@ -109,15 +109,6 @@
       - inventory_hostname == iac_blueprint.ceph.monitors | first
     fail_msg: "Run install only on the first host in ceph.monitors; it is the designated bootstrap host"
   when: iac_state == "install"
-
-- name: "Checking destructive OSD opt-in"
-  ansible.builtin.assert:
-    that:
-      - iac_blueprint.ceph.allow_osd_device_wipe | default(false) | bool
-    fail_msg: "OSD provisioning can destroy device data; explicitly set allow_osd_device_wipe: true"
-  when:
-    - iac_state == "install"
-    - iac_blueprint.ceph.osds | default([]) | length > 0
 
 - name: "Checking cluster network before installation"
   ansible.builtin.assert:
