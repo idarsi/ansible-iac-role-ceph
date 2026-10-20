@@ -12,10 +12,10 @@ RC readiness; planned work earns no points.
 |---|---:|---:|---|
 | Scope and public contract | 12 | 9 | Blueprint and state limits are documented; platform and dependency/support evidence is incomplete. |
 | Functional completeness | 20 | 10 | Bootstrap and declared operations exist; actual Ceph execution, platform, recovery, and asynchronous convergence remain unverified. |
-| Validation and safety | 20 | 14 | Input preflight and explicit OSD opt-in are exercised by passing validation and mock-install scenarios; physical disk safety and check-mode behavior are not established. |
+| Validation and safety | 20 | 12 | Input preflight and explicit OSD opt-in are implemented and covered by validation/mock scenarios; comprehensive proof that every failure precedes mutation, physical-device safety, and check-mode behavior are not established. |
 | Convergence and recovery | 13 | 5 | Bootstrap/pool guards exist; orchestration specs are reapplied and external convergence is not observed. |
-| Automated testing and CI | 25 | 11 | Validation and install-mock Molecule scenarios pass, including command/spec assertions and a mocked repeat-install pass; the mock does not prove true idempotence, live cluster HA/OSD/device safety, or actual execution. Platform matrix and evidenced required CI are also missing. |
-| Documentation and release hygiene | 10 | 3 | README and test limitations exist; contribution/release and support evidence remain incomplete. |
+| Automated testing and CI | 25 | 8 | Validation and mocked install Molecule coverage exercise input guards, generated command/spec contracts, and repeat-install reporting. The mocks do not establish true idempotence, actual Ceph execution, or live cluster, HA, OSD/device-safety behavior; a supported-platform matrix and evidenced required CI are missing. |
+| Documentation and release hygiene | 10 | 8 | README, testing guidance/limitations, and this evidence-based roadmap document role usage and boundaries. Supported-platform/dependency policy and complete contribution, release, and upgrade guidance remain gaps. |
 | **Total** | **100** | **52** | **Alpha (floor)** |
 
 ## Milestones and acceptance gates
