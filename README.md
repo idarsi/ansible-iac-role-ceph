@@ -86,7 +86,7 @@ Top-level blueprint variables
 | cluster_name      | yes               | none          | Cluster name; currently only `ceph` is supported. |
 | monitors          | yes               | none          | Odd-sized list of >=3 inventory hosts; the first host is the designated bootstrap host and must be the only host targeted by install. |
 | cluster_network   | install            | none          | Explicit private cluster CIDR; required for bootstrap. |
-| osds              | no                | []            | Explicit host/device records. Hosts are registered from this declaration, so OSD-only inventory hosts are supported. |
+| osds              | no                | []            | Explicit host/device records. A device path must be unique per host; the same path on different hosts is valid. Omitted records do not remove existing OSDs. Hosts are registered from this declaration, so OSD-only inventory hosts are supported. |
 | pools             | no                | []            | Pools to create, with optional pg_num (default 32). |
 
 Configuration examples
@@ -94,6 +94,6 @@ Configuration examples
 
 **This role is not production-ready.** OSDs must be explicitly declared as host/device records; automatic discovery is not used. The role submits documented Ceph OSD service specs (`data_devices.paths`) using `ceph orch apply -i`; Ceph only provisions devices it considers available (no partitions, LVM, mount, filesystem, existing OSD, and adequate capacity). Unavailable/in-use devices are not zapped or forcibly provisioned. Check device eligibility with `ceph orch device ls` before installation.
 
-Every OSD host must also be present in Ansible inventory. Such hosts may be OSD-only and need not appear in `monitors`; the role registers the union of monitor and declared OSD hosts with the orchestrator.
+Every OSD host must also be present in Ansible inventory. Such hosts may be OSD-only and need not appear in `monitors`; the role registers the union of monitor and declared OSD hosts with the orchestrator. OSD specifications omitted from a later blueprint are not automatically removed; removal must be managed explicitly through Ceph.
 
 Only use install in a disposable, reviewed environment after testing cephadm behavior manually. Target only the first host in `monitors` when invoking install; the role rejects install on any other host to avoid multiple hosts independently attempting bootstrap. Bootstrap only runs when `/etc/ceph/ceph.conf` is absent. Monitor and manager placement and OSD device requests use declarative orchestrator service specs, re-applied on every install run. Ceph's asynchronous orchestration completion and recovery after partial application remain outside role verification. `monitors` validation establishes declared topology only; it does not establish quorum or high availability. Do not use for production clusters.

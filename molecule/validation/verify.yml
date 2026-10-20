@@ -32,5 +32,12 @@
         - { label: "OSD host not in inventory", value: [{ host: "not-in-inventory", device: "/dev/sdb" }] }
         - { label: "device path not absolute", value: [{ host: "ceph-validation", device: "sdb" }] }
         - { label: "duplicate device path", value: [{ host: "ceph-validation", device: "/dev/sdb" }, { host: "ceph-validation", device: "/dev/sdb" }] }
+        - { label: "duplicate host/device pair", value: [{ host: "ceph-validation", device: "/dev/sdb" }, { host: "ceph-validation", device: "/dev/sdb" }] }
       loop_control:
         loop_var: invalid_osd_case
+    - name: "Check deterministic OSD service identifiers do not collide after sanitization"
+      ansible.builtin.assert:
+        that:
+          - >-
+            ('device_' ~ (('ceph-validation|/dev/a-b') | hash('sha256')))
+            != ('device_' ~ (('ceph-validation|/dev/a_b') | hash('sha256')))

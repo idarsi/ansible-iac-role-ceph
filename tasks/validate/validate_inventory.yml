@@ -72,9 +72,10 @@
         (iac_blueprint.ceph.osds | default([]) | selectattr('host', 'in', hostvars) | list | length)
         == (iac_blueprint.ceph.osds | default([]) | length)
       - >-
-        (iac_blueprint.ceph.osds | default([]) | map(attribute='device') | unique | list | length)
-        == (iac_blueprint.ceph.osds | default([]) | length)
-    fail_msg: "OSDs require unique explicit /dev device paths on declared inventory hosts; automatic discovery is unsupported"
+        ((iac_blueprint.ceph.osds | default([]) | map(attribute='host') | list)
+        | zip(iac_blueprint.ceph.osds | default([]) | map(attribute='device') | list)
+        | unique | list | length) == (iac_blueprint.ceph.osds | default([]) | length)
+    fail_msg: "OSDs require unique host/device pairs using explicit /dev paths on declared inventory hosts; automatic discovery is unsupported"
 
 - name: "Checking pool definitions"
   ansible.builtin.assert:

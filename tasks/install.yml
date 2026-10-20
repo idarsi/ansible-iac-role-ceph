@@ -48,7 +48,10 @@
       - "add"
       - "{{ item }}"
       - "{{ hostvars[item].ansible_host | default(item) }}"
-  loop: "{{ (iac_blueprint.ceph.monitors + (iac_blueprint.ceph.osds | default([]) | map(attribute='host') | list)) | unique | difference([inventory_hostname]) }}"
+  loop: >-
+    {{ (iac_blueprint.ceph.monitors
+        + (iac_blueprint.ceph.osds | default([]) | map(attribute='host') | list))
+       | unique | difference([inventory_hostname]) }}
   changed_when: true
   when: item not in (ceph_host_list.stdout | from_json | map(attribute='hostname') | list)
 
@@ -82,7 +85,13 @@
       - "apply"
       - "-i"
       - "-"
-    stdin: "{{ {'service_type': 'osd', 'service_id': ('device_' ~ (item.host ~ '_' ~ item.device | regex_replace('[^A-Za-z0-9_]', '_'))), 'placement': {'hosts': [item.host]}, 'spec': {'data_devices': {'paths': [item.device]}}} | to_json }}"
+    stdin: >-
+      {{ {
+        'service_type': 'osd',
+        'service_id': 'device_' ~ ((item.host ~ '|' ~ item.device) | hash('sha256')),
+        'placement': {'hosts': [item.host]},
+        'spec': {'data_devices': {'paths': [item.device]}}
+      } | to_json }}
   loop: "{{ iac_blueprint.ceph.osds | default([]) }}"
   changed_when: false
   when: iac_blueprint.ceph.osds | default([]) | length > 0
