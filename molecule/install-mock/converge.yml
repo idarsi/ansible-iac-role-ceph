@@ -211,8 +211,7 @@
             - name: "Require synthetic missing account to be absent"
               ansible.builtin.assert:
                 that:
-                  - ceph_missing_user_lookup.rc != 0
-                  - ceph_missing_user_lookup.rc != 127
+                  - ceph_missing_user_lookup.rc == 2
             - name: "Attempt install with missing SSH account"
               ansible.builtin.include_role:
                 name: ansible-iac-role-ceph
