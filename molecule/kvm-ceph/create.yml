@@ -8,6 +8,8 @@
     test_environment: "{{ lookup('env', 'IDARSI_TEST_ENVIRONMENT') }}"
     ephemeral: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}"
     scenario_directory: "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') }}"
+    kvm_base_dir: "{{ lookup('env', 'IDARSI_TEST_KVM_BASE_DIR') | default('/var/lib/libvirt/images/idarsi-test-bases', true) }}"
+    disk_suffix: "{{ ephemeral | hash('sha256') | truncate(8, true, '') }}"
   tasks:
     - name: Require explicit destructive-test authorization
       ansible.builtin.assert:
@@ -15,8 +17,21 @@
           - lookup('env', 'IDARSI_CEPH_KVM_DISPOSABLE') == 'YES_I_WILL_DESTROY_THESE_VMS_AND_DISKS'
           - test_environment | length > 0
           - ephemeral | length > 0
+          - kvm_base_dir.startswith('/')
           - molecule_config.platforms | map(attribute='name') | list == ['ceph-a', 'ceph-b', 'ceph-c']
         fail_msg: "This scenario destroys its isolated guests/disks; set the exact IDARSI_CEPH_KVM_DISPOSABLE acknowledgment."
+
+    - name: Require scenario guest OS disk paths to be absent before creation
+      ansible.builtin.stat:
+        path: "{{ kvm_base_dir }}/molecule-{{ item }}-{{ disk_suffix }}.qcow2"
+      loop: ["ceph-a", "ceph-b", "ceph-c"]
+      register: guest_disk_paths
+
+    - name: Refuse to overwrite existing guest OS disks
+      ansible.builtin.assert:
+        that: not item.stat.exists
+        fail_msg: "Refusing to overwrite scenario guest OS disk {{ item.stat.path }}"
+      loop: "{{ guest_disk_paths.results }}"
 
     - name: Create three guests using the shared KVM lifecycle helper
       ansible.builtin.command:
@@ -37,6 +52,7 @@
         KVM_VCPUS: "{{ item.vcpus | default(2) }}"
         KVM_DISK_SIZE_GB: "{{ item.disk_size_gb | default(30) }}"
         KVM_BASE_IMAGE_MODE: "off"
+        KVM_DISK_PATH: "{{ kvm_base_dir }}/molecule-{{ item.name }}-{{ disk_suffix }}.qcow2"
         KVM_INSTALL_TIMEOUT: "{{ item.install_timeout | default(3600) }}"
       loop: "{{ molecule_config.platforms }}"
       loop_control:
@@ -63,7 +79,8 @@
     - name: Require the configured OSD volume pool to be active
       ansible.builtin.shell: |
         set -euo pipefail
-        virsh --connect "$LIBVIRT_URI" pool-info "$OSD_VOLUME_POOL" | grep -Eq '^State:[[:space:]]+running$'
+        pool_info=$(virsh --connect "$LIBVIRT_URI" pool-info "$OSD_VOLUME_POOL")
+        [[ "$pool_info" =~ State:[[:space:]]+running([[:space:]]|$) ]]
       args:
         executable: /bin/bash
       environment:
