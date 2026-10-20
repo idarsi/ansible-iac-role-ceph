@@ -7,22 +7,6 @@
 #
 ###############################################################################
 
-- name: "Install Ceph bootstrap runtime prerequisites"
-  ansible.builtin.package:
-    name:
-      - "podman"
-      - "lvm2"
-      - "chrony"
-      - "python3"
-    state: "present"
-
-- name: "Enable time synchronization for Ceph"
-  ansible.builtin.service:
-    name: "chronyd"
-    state: "started"
-    enabled: true
-  when: ansible_service_mgr | default("") == "systemd"
-
 - name: "Verify declared hosts have the non-root Ceph SSH account"
   ansible.builtin.getent:
     database: "passwd"
@@ -56,6 +40,7 @@
   become: true
   become_user: "{{ iac_blueprint.ceph.ssh_user }}"
   changed_when: false
+  failed_when: false
   delegate_to: "{{ iac_resource }}"
   loop: >-
     {{ (iac_blueprint.ceph.monitors
@@ -65,6 +50,34 @@
     loop_var: iac_resource
   when: (iac_blueprint.ceph.ssh_user | default('root')) != 'root'
   register: ceph_sudo_check
+
+- name: "Require passwordless sudo for the non-root Ceph SSH user"
+  ansible.builtin.assert:
+    that:
+      - iac_resource.rc == 0
+    fail_msg: >-
+      Ceph SSH user '{{ iac_blueprint.ceph.ssh_user }}' must have passwordless sudo
+      on declared host '{{ iac_resource.iac_resource }}'.
+  loop: "{{ ceph_sudo_check.results | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
+  when: not iac_resource.skipped | default(false)
+
+- name: "Install Ceph bootstrap runtime prerequisites"
+  ansible.builtin.package:
+    name:
+      - "podman"
+      - "lvm2"
+      - "chrony"
+      - "python3"
+    state: "present"
+
+- name: "Enable time synchronization for Ceph"
+  ansible.builtin.service:
+    name: "chronyd"
+    state: "started"
+    enabled: true
+  when: ansible_service_mgr | default("") == "systemd"
 
 - name: "Require a cephadm artifact with a pinned checksum"
   ansible.builtin.assert:

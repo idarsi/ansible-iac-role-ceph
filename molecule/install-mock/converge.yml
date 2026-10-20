@@ -192,3 +192,83 @@
           - "'device-inventory' in rejected_device_log.stdout_lines"
           - "'daemon-apply' not in rejected_device_log.stdout_lines"
           - "rejected_device_log.stdout_lines | select('match', '^spec .*\"service_type\":\"osd\"') | list | length == 0"
+    - name: "Exercise SSH prerequisite rejection before mutation"
+      block:
+        - name: "Remove install sentinel and clear mock activity log"
+          ansible.builtin.shell: |
+            rm -f /tmp/ceph-mock-state/ceph.conf
+            : > /tmp/ceph-mock-state/ceph-mock.log
+          changed_when: false
+        - name: "Create temporary account without sudo privileges"
+          ansible.builtin.user:
+            name: "ceph-no-sudo"
+            state: "present"
+            create_home: true
+        - name: "Run install with a missing SSH account"
+          block:
+            - name: "Attempt install with missing SSH account"
+              ansible.builtin.include_role:
+                name: ansible-iac-role-ceph
+              vars:
+                state: "install"
+                ceph_bootstrap_sentinel: "/tmp/ceph-mock-state/ceph.conf"
+                iac_blueprint:
+                  ceph:
+                    cluster_name: "ceph"
+                    monitors: ["ceph-install-mock"]
+                    cluster_network: "10.20.0.0/24"
+                    ssh_user: "ceph-missing"
+            - name: "Fail if missing account is unexpectedly accepted"
+              ansible.builtin.fail:
+                msg: "The role accepted a missing Ceph SSH account."
+          rescue:
+            - name: "Assert missing account rejected by exact preflight task and message"
+              ansible.builtin.assert:
+                that:
+                  - ansible_failed_task.name == "Require existing non-root Ceph accounts"
+                  - >-
+                    ansible_failed_result.msg == "Ceph SSH user 'ceph-missing' must already exist on declared host 'ceph-install-mock'; this role will not create accounts."
+          always:
+            - name: "Assert missing-account rejection preceded all mutation"
+              ansible.builtin.shell: |
+                test ! -e /tmp/ceph-mock-state/ceph.conf
+                test ! -s /tmp/ceph-mock-state/ceph-mock.log
+                test ! -e /home/ceph-missing/.ssh/authorized_keys
+              changed_when: false
+        - name: "Run install with an existing account lacking passwordless sudo"
+          block:
+            - name: "Attempt install without passwordless sudo"
+              ansible.builtin.include_role:
+                name: ansible-iac-role-ceph
+              vars:
+                state: "install"
+                ceph_bootstrap_sentinel: "/tmp/ceph-mock-state/ceph.conf"
+                iac_blueprint:
+                  ceph:
+                    cluster_name: "ceph"
+                    monitors: ["ceph-install-mock"]
+                    cluster_network: "10.20.0.0/24"
+                    ssh_user: "ceph-no-sudo"
+            - name: "Fail if missing passwordless sudo is unexpectedly accepted"
+              ansible.builtin.fail:
+                msg: "The role accepted an SSH account without passwordless sudo."
+          rescue:
+            - name: "Assert sudo rejection by exact preflight task and message"
+              ansible.builtin.assert:
+                that:
+                  - ansible_failed_task.name == "Require passwordless sudo for the non-root Ceph SSH user"
+                  - >-
+                    ansible_failed_result.msg == "Ceph SSH user 'ceph-no-sudo' must have passwordless sudo on declared host 'ceph-install-mock'."
+          always:
+            - name: "Assert sudo rejection preceded all mutation"
+              ansible.builtin.shell: |
+                test ! -e /tmp/ceph-mock-state/ceph.conf
+                test ! -s /tmp/ceph-mock-state/ceph-mock.log
+                test ! -e /home/ceph-no-sudo/.ssh/authorized_keys
+              changed_when: false
+      always:
+        - name: "Remove temporary SSH test account"
+          ansible.builtin.user:
+            name: "ceph-no-sudo"
+            state: "absent"
+            remove: true
