@@ -1,23 +1,30 @@
 ---
 - name: "Confirm OSD provisioning is rejected without opt-in"
   block:
-    - name: "Validate OSD declaration without opt-in"
+    - name: "Declare monitor peers used by preflight validation"
+      ansible.builtin.add_host:
+        name: "{{ item }}"
+      loop: ["ceph-b", "ceph-c"]
+
+    - name: "Attempt install with OSD declaration but no opt-in"
       ansible.builtin.include_role:
         name: "{{ playbook_dir }}/../.."
       vars:
-        state: "validate"
+        state: "install"
         iac_blueprint:
           ceph:
             cluster_name: "ceph"
             monitors: ["ceph-validation", "ceph-b", "ceph-c"]
+            cluster_network: "192.0.2.0/24"
             osds: [{ host: "ceph-validation", device: "/dev/sdb" }]
             pools: []
     - name: "Fail if undeclared provisioning is accepted"
       ansible.builtin.fail:
         msg: "OSD declaration without opt-in was unexpectedly accepted"
   rescue:
-    - name: "Assert opt-in validation failed before any role mutation"
+    - name: "Assert opt-in validation failed before any Ceph command"
       ansible.builtin.assert:
         that:
           - "'ceph.allow_osd_provisioning' in ansible_failed_result.msg"
+          - ansible_failed_task.name == "Checking explicit OSD provisioning opt-in"
         fail_msg: "OSD without opt-in failed for an unexpected reason: {{ ansible_failed_result.msg }}"

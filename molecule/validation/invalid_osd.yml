@@ -1,21 +1,29 @@
 ---
-- name: "Reject invalid declared OSD device"
-  ansible.builtin.include_role:
-    name: "{{ playbook_dir }}/../.."
-  vars:
-    state: "validate"
-    iac_blueprint:
-      ceph:
-        cluster_name: "ceph"
-        monitors: ["ceph-validation", "ceph-b", "ceph-c"]
-        allow_osd_provisioning: true
-        osds: "{{ invalid_osd_case.value }}"
-        pools: []
-  register: invalid_osd_result
-  failed_when: false
+- name: "Confirm validation rejects {{ invalid_osd_case.label }}"
+  block:
+    - name: "Validate malformed OSD definition"
+      ansible.builtin.include_role:
+        name: "{{ playbook_dir }}/../.."
+      vars:
+        state: "validate"
+        iac_blueprint:
+          ceph:
+            cluster_name: "ceph"
+            monitors: ["ceph-validation", "ceph-b", "ceph-c"]
+            allow_osd_provisioning: true
+            osds: "{{ invalid_osd_case.value }}"
+            pools: []
+  rescue:
+    - name: "Assert validation failed specifically for the OSD definition"
+      ansible.builtin.assert:
+        that:
+          - "'OSDs require unique host/device pairs' in ansible_failed_result.msg"
+        fail_msg: "{{ invalid_osd_case.label }} failed for an unexpected reason: {{ ansible_failed_result.msg }}"
+    - name: "Record expected OSD validation rejection"
+      ansible.builtin.set_fact:
+        invalid_osd_rejected: true
 
 - name: "Assert OSD host/device constraint is rejected"
   ansible.builtin.assert:
     that:
-      - invalid_osd_result.failed
-      - "'OSDs require unique host/device pairs' in (invalid_osd_result.msg | default(''))"
+      - invalid_osd_rejected | default(false)
