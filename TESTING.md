@@ -2,7 +2,12 @@
 
 This Alpha release has validation and mock-CLI scenarios plus a guarded live
 multi-host KVM integration scenario (not yet run).
-Previously recorded scenario results predate the current version/preflight changes; they have not yet been run. The mock scenario checks
+The latest Molecule attempt at assessed HEAD failed before scenario actions:
+the shared `ansible-current` Podman plugin rejects
+`containers.podman.podman_image`'s `build.file` argument. Production-profile
+Ansible lint passes. A prior validation and install-mock run at `50fb` passed,
+but it does not verify the current code, and failed attempts earn no test credit.
+The mock scenario checks
 command arguments/spec generation, bootstrap's local guard, accepted/rejected
 OSD device inventory (including duplicate ambiguous records), bootstrap SSH-user arguments, and public-key installation for declared peers, and two install passes in one converge play without a Ceph cluster. Mock state and the overridden bootstrap sentinel are confined to `/tmp/ceph-mock-state` in the unmounted Podman container. The
 scenario deliberately omits Molecule's separate idempotence phase: its second
@@ -12,9 +17,9 @@ acceptance/convergence, disk safety, OSD provisioning, HA, or platform support.
 
 | Platform/image | Ansible or application versions | Molecule scenarios | Main coverage |
 |---|---|---|---|
-| Rocky Linux 9 Podman container | Ansible Core >=2.19 | validation — passed | Accepted and rejected blueprint inputs; validation-only non-mutation |
-| Rocky Linux 9 Podman container | Ansible Core >=2.19 | install-mock — pending | Installed cephadm version check, pool conflict preflight ahead of mutation, accepted and duplicate-ambiguous/rejected OSD inventory, pinned image and repeated install |
-| Rocky Linux 9 KVM guests (three-node cluster) | Ceph Tentacle 20.2.4; Ansible Core >=2.19 | kvm-ceph — implemented, not run | Real bootstrap/host registration, 3 monitors, active manager, two scenario-owned OSD disks, pool, non-ERR health, repeat convergence and scoped cleanup |
+| Rocky Linux 9 Podman container | Ansible Core >=2.19 | validation — latest attempt blocked before actions | Accepted and rejected blueprint inputs; validation-only non-mutation |
+| Rocky Linux 9 Podman container | Ansible Core >=2.19 | install-mock — latest attempt blocked before actions | Installed cephadm version check, pool conflict preflight ahead of mutation, accepted and duplicate-ambiguous/rejected OSD inventory, pinned image and repeated install |
+| Rocky Linux 9 KVM guests (three-node cluster) | Ceph Tentacle 20.2.4; Ansible Core >=2.19 | kvm-ceph — not run; prerequisites absent | Real bootstrap/host registration, 3 monitors, active manager, two scenario-owned OSD disks, pool, non-ERR health, repeat convergence and scoped cleanup |
 
 Use the pre-existing shared `idarsi-ansible-test-environments` environment; follow that repository's setup instructions to activate it.
 
@@ -40,8 +45,11 @@ two named ephemeral OSD volumes in the active `idarsi-test-bases` pool
 (override with `IDARSI_CEPH_OSD_VOLUME_POOL` if needed); it removes those
 volumes and the three shared-lifecycle guests at teardown. Never run it against valuable VMs
 or storage. Repeat separately with Rocky 10 by setting the install source to
-its ISO; Rocky 10 remains unverified and is not claimed as live-supported by
-this scenario definition alone.
+its ISO. The previous real Rocky 10 run passed bootstrap but failed SSH root
+authentication before the new nonroot key-distribution implementation, so
+that fix remains unverified. Rocky 9/10 support is unverified. The shared
+`idarsi-test` network and `idarsi-test-bases` pool are currently absent, so KVM
+cannot run; no shared environment changes were made.
 
 Commands: `molecule test -s validation`; `molecule test -s install-mock`; `ansible-lint --profile production`; `ansible-playbook --syntax-check -i docs/inventory-minimal.yml docs/playbook-example.yml`.
 

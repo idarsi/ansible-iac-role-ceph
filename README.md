@@ -1,5 +1,6 @@
 > **Maturity State: Alpha**<br>
 > **RC Readiness: 52% (floor)**
+> **Assessment ref:** commit [`81bae73`](https://github.com/idarsi/ansible-iac-role-ceph/commit/81bae73)
 
 ANSIBLE-IAC-ROLE-CEPH
 ===============================
