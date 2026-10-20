@@ -59,15 +59,26 @@
     molecule_config: "{{ lookup('file', lookup('env', 'MOLECULE_FILE')) | from_yaml }}"
     disk_suffix: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') | hash('sha256') | truncate(8, true, '') }}"
   tasks:
+    - name: Require the configured OSD volume pool to be active
+      ansible.builtin.shell: |
+        set -euo pipefail
+        virsh --connect "$LIBVIRT_URI" pool-info "$OSD_VOLUME_POOL" | grep -Eq '^State:[[:space:]]+running$'
+      args:
+        executable: /bin/bash
+      environment:
+        LIBVIRT_URI: "{{ molecule_config.driver.libvirt_uri | default('qemu:///system') }}"
+        OSD_VOLUME_POOL: "{{ molecule_config.scenario.osd_volume_pool | default('idarsi-test-bases') }}"
+      changed_when: false
+
     - name: Create and attach only the two scenario-owned OSD volumes
       ansible.builtin.shell: |
         set -euo pipefail
         for vm in ceph-b ceph-c; do
           volume="idarsi-ceph-${DISK_SUFFIX}-${vm}-osd.qcow2"
           domain="molecule-${vm}-${DISK_SUFFIX}"
-          virsh --connect "$LIBVIRT_URI" vol-create-as --pool default "$volume" 20G --format qcow2
+          virsh --connect "$LIBVIRT_URI" vol-create-as --pool "$OSD_VOLUME_POOL" "$volume" 20G --format qcow2
           cat > "${MOLECULE_EPHEMERAL_DIRECTORY}/${vm}-osd.xml" <<EOF
-        <disk type='volume' device='disk'><driver name='qemu' type='qcow2'/><source pool='default' volume='${volume}'/><target dev='vdb' bus='virtio'/></disk>
+        <disk type='volume' device='disk'><driver name='qemu' type='qcow2'/><source pool='${OSD_VOLUME_POOL}' volume='${volume}'/><target dev='vdb' bus='virtio'/></disk>
         EOF
           virsh --connect "$LIBVIRT_URI" attach-device "$domain" "${MOLECULE_EPHEMERAL_DIRECTORY}/${vm}-osd.xml" --config --live
         done
@@ -77,4 +88,5 @@
         MOLECULE_EPHEMERAL_DIRECTORY: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}"
         DISK_SUFFIX: "{{ disk_suffix }}"
         LIBVIRT_URI: "{{ molecule_config.driver.libvirt_uri | default('qemu:///system') }}"
+        OSD_VOLUME_POOL: "{{ molecule_config.scenario.osd_volume_pool | default('idarsi-test-bases') }}"
       changed_when: true

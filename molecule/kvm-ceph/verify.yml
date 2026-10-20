@@ -1,4 +1,22 @@
 ---
+- name: Verify shared OSD volume pool remains active
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    molecule_config: "{{ lookup('file', lookup('env', 'MOLECULE_FILE')) | from_yaml }}"
+  tasks:
+    - name: Require the configured OSD volume pool to be active
+      ansible.builtin.shell: |
+        set -euo pipefail
+        virsh --connect "$LIBVIRT_URI" pool-info "$OSD_VOLUME_POOL" | grep -Eq '^State:[[:space:]]+running$'
+      args:
+        executable: /bin/bash
+      environment:
+        LIBVIRT_URI: "{{ molecule_config.driver.libvirt_uri | default('qemu:///system') }}"
+        OSD_VOLUME_POOL: "{{ molecule_config.scenario.osd_volume_pool | default('idarsi-test-bases') }}"
+      changed_when: false
+
 - name: Verify real Ceph cluster convergence
   hosts: ceph-a
   become: true

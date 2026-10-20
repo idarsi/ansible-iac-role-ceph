@@ -21,7 +21,8 @@ Use the pre-existing shared `idarsi-ansible-test-environments` environment; foll
 The live KVM scenario is deliberately excluded from PR/push CI. It is a
 manual/scheduled heavy test requiring libvirt/KVM, an available Rocky 9 ISO,
 and disposable storage. After activating `ansible-current` from the shared
-environment and confirming the `default` libvirt storage pool/network:
+environment and confirming the `idarsi-test-bases` storage pool and shared
+`idarsi-test` network:
 
 ```bash
 export IDARSI_TEST_KVM_INSTALL_SOURCE=/path/to/Rocky-9-x86_64-dvd.iso
@@ -31,7 +32,9 @@ molecule test -s kvm-ceph
 
 The exact acknowledgment is required by both create and destroy. The scenario
 uses static addresses `.21`–`.23` on the shared NAT network and creates only
-two named ephemeral `default`-pool volumes; it removes those volumes and the
+two named ephemeral OSD volumes in the scenario-configured, active
+`idarsi-test-bases` pool (override `scenario.osd_volume_pool` in
+`molecule/kvm-ceph/molecule.yml` if needed); it removes those volumes and the
 three shared-lifecycle guests at teardown. Never run it against valuable VMs
 or storage. Repeat separately with Rocky 10 by setting the install source to
 its ISO; Rocky 10 remains unverified and is not claimed as live-supported by

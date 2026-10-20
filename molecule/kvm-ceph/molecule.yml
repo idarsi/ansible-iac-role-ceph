@@ -1,6 +1,7 @@
 ---
 scenario:
   name: kvm-ceph
+  osd_volume_pool: idarsi-test-bases
   test_sequence:
     - destroy
     - syntax

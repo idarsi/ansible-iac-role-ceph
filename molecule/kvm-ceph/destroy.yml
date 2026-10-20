@@ -15,6 +15,17 @@
           - test_environment | length > 0
         fail_msg: "Refusing to remove Ceph scenario VMs/disks without exact destructive-test acknowledgment."
 
+    - name: Require the configured OSD volume pool to be active
+      ansible.builtin.shell: |
+        set -euo pipefail
+        virsh --connect "$LIBVIRT_URI" pool-info "$OSD_VOLUME_POOL" | grep -Eq '^State:[[:space:]]+running$'
+      args:
+        executable: /bin/bash
+      environment:
+        LIBVIRT_URI: "{{ molecule_config.driver.libvirt_uri | default('qemu:///system') }}"
+        OSD_VOLUME_POOL: "{{ molecule_config.scenario.osd_volume_pool | default('idarsi-test-bases') }}"
+      changed_when: false
+
     - name: Attempt removal of only the two named OSD volumes and attachments
       ansible.builtin.shell: |
         set -uo pipefail
@@ -29,8 +40,8 @@
               error_count=$((error_count + 1))
             fi
           fi
-          if virsh --connect "$LIBVIRT_URI" vol-info "$volume" --pool default >/dev/null 2>&1; then
-            if ! virsh --connect "$LIBVIRT_URI" vol-delete "$volume" --pool default; then
+          if virsh --connect "$LIBVIRT_URI" vol-info "$volume" --pool "$OSD_VOLUME_POOL" >/dev/null 2>&1; then
+            if ! virsh --connect "$LIBVIRT_URI" vol-delete "$volume" --pool "$OSD_VOLUME_POOL"; then
               errors+=("delete volume $volume failed")
               error_count=$((error_count + 1))
             fi
@@ -45,6 +56,7 @@
       environment:
         DISK_SUFFIX: "{{ suffix }}"
         LIBVIRT_URI: "{{ molecule_config.driver.libvirt_uri | default('qemu:///system') }}"
+        OSD_VOLUME_POOL: "{{ molecule_config.scenario.osd_volume_pool | default('idarsi-test-bases') }}"
       register: disk_cleanup
       failed_when: false
       changed_when: true
@@ -70,8 +82,8 @@
         error_count=0
         for vm in ceph-b ceph-c; do
           volume="idarsi-ceph-${DISK_SUFFIX}-${vm}-osd.qcow2"
-          if virsh --connect "$LIBVIRT_URI" vol-info "$volume" --pool default >/dev/null 2>&1; then
-            if ! virsh --connect "$LIBVIRT_URI" vol-delete "$volume" --pool default; then
+          if virsh --connect "$LIBVIRT_URI" vol-info "$volume" --pool "$OSD_VOLUME_POOL" >/dev/null 2>&1; then
+            if ! virsh --connect "$LIBVIRT_URI" vol-delete "$volume" --pool "$OSD_VOLUME_POOL"; then
               errors+=("delete volume $volume failed")
               error_count=$((error_count + 1))
             fi
@@ -86,6 +98,7 @@
       environment:
         DISK_SUFFIX: "{{ suffix }}"
         LIBVIRT_URI: "{{ molecule_config.driver.libvirt_uri | default('qemu:///system') }}"
+        OSD_VOLUME_POOL: "{{ molecule_config.scenario.osd_volume_pool | default('idarsi-test-bases') }}"
       register: disk_cleanup_retry
       failed_when: false
       changed_when: true
