@@ -98,7 +98,7 @@
                 printf '['; separator=; while IFS= read -r host; do printf '%s{"hostname":"%s"}' "$separator" "$host"; separator=,; done < /tmp/ceph-mock-state/hosts; printf ']\n' ;;
               '5:orch:device:ls:--format:json::')
                 printf 'device-inventory\n' >> /tmp/ceph-mock-state/ceph-mock.log
-                if [ -f /tmp/ceph-mock-state/device-rejected ]; then printf '[{"name":"ceph-install-mock","addr":"ceph-install-mock","devices":[{"path":"/dev/sdb","available":true,"rejected_reasons":[]},{"path":"/dev/sdb","available":false,"rejected_reasons":["Has a FileSystem"]}],"labels":[]}]\n'; else printf '[{"name":"ceph-install-mock","addr":"ceph-install-mock","devices":[{"path":"/dev/sdb","available":true,"rejected_reasons":[]}],"labels":[]}]\n'; fi ;;
+                if [ -f /tmp/ceph-mock-state/device-duplicate-host ]; then printf '[{"name":"ceph-install-mock","addr":"ceph-install-mock","devices":[{"path":"/dev/sdb","available":true,"rejected_reasons":[]}],"labels":[]},{"name":"ceph-install-mock","addr":"ceph-install-mock","devices":[],"labels":[]}]\n'; elif [ -f /tmp/ceph-mock-state/device-rejected ]; then printf '[{"name":"ceph-install-mock","addr":"ceph-install-mock","devices":[{"path":"/dev/sdb","available":true,"rejected_reasons":[]},{"path":"/dev/sdb","available":false,"rejected_reasons":["Has a FileSystem"]}],"labels":[]}]\n'; else printf '[{"name":"ceph-install-mock","addr":"ceph-install-mock","devices":[{"path":"/dev/sdb","available":true,"rejected_reasons":[]}],"labels":[]}]\n'; fi ;;
               '4:orch:apply:-i:-:::') printf 'daemon-apply\n' >> /tmp/ceph-mock-state/ceph-mock.log; spec=$(cat); SPEC="$spec" python3 -c 'import json,os,re,sys; x=json.loads(os.environ["SPEC"]); common={"placement":{"hosts":["ceph-install-mock","ceph-b","ceph-c"]}}; kind=x.get("service_type"); valid=(kind in ("mon","mgr") and x==dict(common,service_type=kind)) or (kind=="osd" and re.fullmatch(r"device_[0-9a-f]{64}",x.get("service_id","")) and x=={"service_type":"osd","service_id":x["service_id"],"placement":{"hosts":["ceph-install-mock"]},"spec":{"data_devices":{"paths":["/dev/sdb"]}}}); sys.exit(0 if valid else 2)' || { echo "unexpected service spec: $spec" >&2; exit 2; }; compact=$(printf '%s' "$spec" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin),separators=(",",":")))'); printf 'spec %s\n' "$compact" >> /tmp/ceph-mock-state/ceph-mock.log ;;
               '5:osd:pool:ls:--format:json::') [ -f /tmp/ceph-mock-state/pools ] || : > /tmp/ceph-mock-state/pools; awk 'BEGIN {printf "["} {printf "%s\"%s\"", sep, $0; sep=","} END {print "]"}' /tmp/ceph-mock-state/pools ;;
               '7:osd:pool:get:test-pool:pg_num:--format:json') printf 'pool-preflight\n' >> /tmp/ceph-mock-state/ceph-mock.log; if [ -f /tmp/ceph-mock-state/pool-conflict ]; then printf '{"pool":"test-pool","pool_id":1,"pg_num":8}\n'; else printf '{"pool":"test-pool","pool_id":1,"pg_num":16}\n'; fi ;;
@@ -224,6 +224,35 @@
           - "'daemon-apply' not in conflict_log.stdout_lines"
           - "'host-add ceph-b' not in conflict_log.stdout_lines"
           - "'host-add ceph-c' not in conflict_log.stdout_lines"
+    - name: "Require duplicate host records to fail OSD preflight"
+      block:
+        - name: "Switch device inventory to duplicate host records"
+          ansible.builtin.file:
+            path: "/tmp/ceph-mock-state/device-duplicate-host"
+            state: touch
+            mode: "0644"
+        - name: "Reset mock log before duplicate-host check"
+          ansible.builtin.command: "truncate -s 0 {{ ceph_mock_log }}"
+          changed_when: false
+        - name: "Attempt install with duplicate host records"
+          ansible.builtin.include_role:
+            name: ansible-iac-role-ceph
+          vars:
+            state: "install"
+            ceph_bootstrap_sentinel: "/tmp/ceph-mock-state/ceph.conf"
+            iac_blueprint:
+              ceph:
+                cluster_name: "ceph"
+                monitors: ["ceph-install-mock", "ceph-b", "ceph-c"]
+                cluster_network: "10.20.0.0/24"
+                allow_osd_provisioning: true
+                osds: [{ host: "ceph-install-mock", device: "/dev/sdb" }]
+                pools: [{ name: "test-pool", pg_num: 16 }]
+      rescue:
+        - name: "Assert duplicate host failure is explicit"
+          ansible.builtin.assert:
+            that:
+              - "'Refusing OSD provisioning' in (ansible_failed_result | string)"
     - name: "Assert rejected-device check applied no daemon or OSD specs"
       ansible.builtin.command: "cat {{ ceph_mock_log }}"
       register: rejected_device_log
@@ -234,6 +263,19 @@
           - "'device-inventory' in rejected_device_log.stdout_lines"
           - "'daemon-apply' not in rejected_device_log.stdout_lines"
           - "rejected_device_log.stdout_lines | select('match', '^spec .*\"service_type\":\"osd\"') | list | length == 0"
+    - name: "Assert duplicate-host check applied no daemon or OSD specs"
+      ansible.builtin.command: "cat {{ ceph_mock_log }}"
+      register: duplicate_host_log
+      changed_when: false
+    - name: "Check duplicate-host log contains no spec applies"
+      ansible.builtin.assert:
+        that:
+          - "'device-inventory' in duplicate_host_log.stdout_lines"
+          - "'daemon-apply' not in duplicate_host_log.stdout_lines"
+          - >-
+            duplicate_host_log.stdout_lines
+            | select('match', '^spec .*"service_type":"osd"')
+            | list | length == 0
     - name: "Exercise SSH prerequisite rejection before mutation"
       block:
         - name: "Remove install sentinel and clear mock activity log"

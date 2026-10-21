@@ -268,6 +268,10 @@
       - >-
         (ceph_osd_device_inventory.stdout | from_json
          | selectattr('name', 'equalto', iac_resource.host)
+         | list | length) == 1
+      - >-
+        (ceph_osd_device_inventory.stdout | from_json
+         | selectattr('name', 'equalto', iac_resource.host)
          | map(attribute='devices') | flatten
          | selectattr('path', 'equalto', iac_resource.device)
          | list | length) == 1
@@ -280,7 +284,8 @@
          | selectattr('rejected_reasons', 'equalto', []) | list | length) == 1
     fail_msg: >-
       Refusing OSD provisioning for {{ iac_resource.host }}:{{ iac_resource.device }}:
-      cephadm must report exactly one matching device as available with no rejection reasons.
+      cephadm must report exactly one matching host and device, with the device available
+      and no rejection reasons.
   loop: "{{ iac_blueprint.ceph.osds | default([]) }}"
   loop_control:
     loop_var: iac_resource
