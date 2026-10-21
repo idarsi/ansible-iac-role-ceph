@@ -225,6 +225,19 @@
           - "'daemon-apply' not in conflict_log.stdout_lines"
           - "'host-add ceph-b' not in conflict_log.stdout_lines"
           - "'host-add ceph-c' not in conflict_log.stdout_lines"
+    - name: "Assert rejected-device check applied no daemon or OSD specs"
+      ansible.builtin.command: "cat {{ ceph_mock_log }}"
+      register: rejected_device_log
+      changed_when: false
+    - name: "Check rejected-device log contains no spec applies"
+      ansible.builtin.assert:
+        that:
+          - "rejected_device_log.stdout_lines | select('match', '^device-inventory') | list | length > 0"
+          - "'daemon-apply' not in rejected_device_log.stdout_lines"
+          - >-
+            rejected_device_log.stdout_lines
+            | select('match', '^spec .*\"service_type\":\"osd\"')
+            | list | length == 0
     - name: "Require duplicate host records to fail OSD preflight"
       block:
         - name: "Switch device inventory to duplicate host records"
@@ -254,16 +267,6 @@
           ansible.builtin.assert:
             that:
               - "'Refusing OSD provisioning' in (ansible_failed_result | string)"
-    - name: "Assert rejected-device check applied no daemon or OSD specs"
-      ansible.builtin.command: "cat {{ ceph_mock_log }}"
-      register: rejected_device_log
-      changed_when: false
-    - name: "Check rejected-device log contains no spec applies"
-      ansible.builtin.assert:
-        that:
-          - "'device-inventory' in rejected_device_log.stdout_lines"
-          - "'daemon-apply' not in rejected_device_log.stdout_lines"
-          - "rejected_device_log.stdout_lines | select('match', '^spec .*\"service_type\":\"osd\"') | list | length == 0"
     - name: "Assert duplicate-host check applied no daemon or OSD specs"
       ansible.builtin.command: "cat {{ ceph_mock_log }}"
       register: duplicate_host_log
@@ -271,7 +274,7 @@
     - name: "Check duplicate-host log contains no spec applies"
       ansible.builtin.assert:
         that:
-          - "'device-inventory' in duplicate_host_log.stdout_lines"
+          - "duplicate_host_log.stdout_lines | select('match', '^device-inventory') | list | length > 0"
           - "'daemon-apply' not in duplicate_host_log.stdout_lines"
           - >-
             duplicate_host_log.stdout_lines
