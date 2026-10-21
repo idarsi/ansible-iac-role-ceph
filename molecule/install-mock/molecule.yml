@@ -3,9 +3,12 @@ driver:
   name: podman
 platforms:
   - name: ceph-install-mock
-    image: "quay.io/rockylinux/rockylinux:10"
+    image: "rockylinux:10"
+    registry:
+      url: "quay.io/rockylinux"
     privileged: false
     command: "sleep infinity"
+    pre_build_image: false
 provisioner:
   name: ansible
   env:

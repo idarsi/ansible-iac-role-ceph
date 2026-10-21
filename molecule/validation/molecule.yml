@@ -3,9 +3,12 @@ driver:
   name: podman
 platforms:
   - name: ceph-validation
-    image: "quay.io/rockylinux/rockylinux:9"
+    image: "rockylinux:9"
+    registry:
+      url: "quay.io/rockylinux"
     privileged: false
     command: "sleep infinity"
+    pre_build_image: false
 provisioner:
   name: ansible
   env:
