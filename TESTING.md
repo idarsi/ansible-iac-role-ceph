@@ -1,14 +1,12 @@
 # Testing
 
-This Alpha release has validation and mock-CLI scenarios plus a guarded live
-multi-host KVM integration scenario (not yet run).
-The latest install-mock attempt failed before scenario actions on Rocky 9 /
-Python 3.9 with `Unknown profile name module_legacy_m2c`. A separate recent
-Molecule attempt was also blocked before scenario actions because the shared
-`ansible-current` Podman plugin rejects `containers.podman.podman_image`'s
-`build.file` argument. Production-profile Ansible lint passes. A prior
-validation and install-mock run at `50fb` passed,
-but it does not verify the current code, and failed attempts earn no test credit.
+This Beta release has validation and mock-CLI scenarios plus a guarded live
+multi-host KVM integration scenario. At assessed commit `3706511`, validation,
+install-mock, production-profile lint, and example syntax checks passed. The
+full Rocky 10 Tentacle 20.2.4 `kvm-ceph` Molecule sequence also passed all eight
+actions (create, converge/verify twice, cleanup) using shared environment HEAD
+`b6b56db`, Ansible Core 2.20.8, and Molecule 26.8.0. These results do not
+establish general Rocky 10 support or Rocky 9 live-cluster support.
 The mock scenario checks
 command arguments/spec generation, bootstrap's local guard, accepted/rejected
 OSD device inventory (including duplicate ambiguous records), bootstrap SSH-user arguments, and public-key installation for declared peers, and two install passes in one converge play without a Ceph cluster. Mock state and the overridden bootstrap sentinel are confined to `/tmp/ceph-mock-state` in the unmounted Podman container. The
@@ -19,9 +17,10 @@ acceptance/convergence, disk safety, OSD provisioning, HA, or platform support.
 
 | Platform/image | Ansible or application versions | Molecule scenarios | Main coverage |
 |---|---|---|---|
-| Rocky Linux 9 Podman container | Ansible Core >=2.19 | validation — latest attempt blocked before actions | Accepted and rejected blueprint inputs; validation-only non-mutation; validation scenario's Rocky 9 target is not platform-support evidence |
-| Rocky Linux 10 / Python 3.12 Podman container | Ansible Core >=2.19 | install-mock — latest attempt blocked before actions | Generic controller/module compatibility target; installed cephadm version check, host prerequisite package task across declared targets (container mock skips chronyd), pool conflict preflight ahead of mutation, accepted and duplicate-ambiguous/rejected OSD inventory, pinned image and repeated install; not Rocky 10 role-support evidence |
-| Rocky Linux 9/10 KVM guests (three-node cluster) | Ceph Tentacle 20.2.4; Ansible Core >=2.19 | kvm-ceph — not run; prerequisites absent | Per-declared-host Podman/LVM2/chrony/python3 prerequisites and chronyd activation before bootstrap/host registration; real bootstrap/host registration, all 3 monitors in quorum, active and standby manager, two scenario-owned OSDs up/in, pool, non-ERR health, repeat convergence and scoped cleanup |
+| Rocky Linux 9 Podman container | Ansible Core >=2.19 | validation — passed at 3706511 | Accepted and rejected blueprint inputs; validation-only non-mutation. Container validation is not Rocky 9 live-platform evidence. |
+| Rocky Linux 10 / Python 3.12 Podman container | Ansible Core >=2.19 | install-mock — passed at 3706511 | Installed cephadm version check, prerequisite package task (container mock skips chronyd), pool conflict preflight, accepted/rejected OSD inventory, pinned image and repeated mocked install; not platform support evidence. |
+| Rocky Linux 10 KVM guests (three-node cluster) | Ceph Tentacle 20.2.4; Ansible Core 2.20.8; Molecule 26.8.0 | kvm-ceph — full sequence passed at 3706511 | Three monitors in quorum, active and standby manager, two scenario-owned OSDs up/in, pool, non-error health, second convergence including owned-unavailable OSD repeat, and scoped cleanup. Cleanup removed scenario guests/disks/OSDs and preserved shared network, pool, and base images. |
+| Rocky Linux 9 KVM guests (three-node cluster) | Ceph Tentacle 20.2.4; Ansible Core >=2.19 | kvm-ceph — not run | Intended test target only; no live-cluster evidence. |
 
 Use the pre-existing shared `idarsi-ansible-test-environments` environment; follow that repository's setup instructions to activate it.
 
@@ -30,7 +29,7 @@ The `install-mock` and `kvm-ceph` scenarios each install their pinned
 Galaxy dependency step; no shared Ansible environment dependency is changed.
 
 The live KVM scenario is deliberately excluded from PR/push CI. It is a
-manual/scheduled heavy test requiring libvirt/KVM, an available Rocky 9 ISO,
+manual/scheduled heavy test requiring libvirt/KVM, an available Rocky Linux ISO,
 and disposable storage. After activating `ansible-current` from the shared
 environment and confirming the `idarsi-test-bases` storage pool and shared
 `idarsi-test` network:
@@ -50,22 +49,18 @@ two named ephemeral OSD volumes in the active `idarsi-test-bases` pool
 (override with `IDARSI_CEPH_OSD_VOLUME_POOL` if needed); it removes those
 volumes and the three shared-lifecycle guests at teardown. Never run it against valuable VMs
 or storage. Repeat separately with Rocky 10 by setting the install source to
-its ISO. The previous real Rocky 10 run passed bootstrap but failed SSH root
-authentication before the new nonroot key-distribution implementation, so
-that fix remains unverified. Rocky 9/10 support is unverified. The shared
-`idarsi-test` network and `idarsi-test-bases` pool are currently absent, so KVM
-cannot run; no shared environment changes were made.
+its ISO. Rocky 10 has passed this sequence; Rocky 9 live-cluster behavior has not been
+tested. Shared environment setup and state can differ between runs; confirm
+disposable guests/storage and required shared network/pool before execution.
 
 Commands: `molecule test -s validation`; `molecule test -s install-mock`; `ansible-lint --profile production`; `ansible-playbook --syntax-check -i docs/inventory-minimal.yml docs/playbook-example.yml`.
 
-At commit `50fb6c5`, the two passing scenarios provided historical evidence for validation behavior and mock command/spec construction plus the local repeat-install path only. They are not evidence that the current revision passes: the latest attempts were blocked before scenario actions, as noted above. Even historically, the repeated mock pass was not true Ceph idempotence evidence: service specs were submitted each time and reported `changed: false` because the role has no reliable state comparison. Host registration and pool create behavior also need validation against real CLI responses. Those runs did not prove live cluster HA, OSD/device safety, Ceph acceptance or convergence, or supported Rocky 9 operation. Live Ceph/cluster execution evidence is still missing. Real multi-host KVM and production-like cluster, recovery, platform matrix and actual idempotence testing remain release blockers. Podman backend is expected; Docker is not supported. See [ROADMAP.md](docs/ROADMAP.md).
+KVM evidence establishes the tested cluster outcomes and scoped teardown only. It does not establish failure/recovery, upgrade/removal, or accurate changed reporting; repeated specs may report `changed: false` without reliable state comparison. It does not prove device safety or Rocky 9 support. Shared GitHub CI has not been established. Real failure/recovery, upgrade/removal, true changed reporting, supported-platform matrix, and production-like evidence remain gaps. Podman backend is expected; Docker is not supported. See [ROADMAP.md](docs/ROADMAP.md).
 
-The latest install-mock attempt on Rocky 9 / Python 3.9 failed before scenario
-actions with `Unknown profile name module_legacy_m2c`. The mock now uses Rocky 10 /
-Python 3.12 as a generic Ansible-controller compatibility target; the validation
-scenario remains on Rocky 9. Neither mock target establishes supported Rocky
-platforms. The updated scenarios have not been executed for this revision; do
-not treat their pending rows as passed. `.github/workflows/quick.yml` defines PR/push checks
-for validation, mocked install, production lint, and example syntax. It has not
-yet run in GitHub Actions. Rocky 9 and Rocky 10 are intended test-matrix
-platforms only; no live/platform support claim is made for either.
+The prior Rocky 9 / Python 3.9 install-mock incompatibility was addressed by
+running install-mock on Rocky 10 / Python 3.12. At 3706511, configured
+validation, mock, lint, and syntax checks passed locally. `.github/workflows/quick.yml`
+defines PR/push checks, but successful shared GitHub Actions enforcement has
+not been established. Rocky 9 live cluster and Rocky 10 general platform
+compatibility remain unverified; the cephadm executable is sourced from the
+upstream EL9 artifact, a compatibility caveat on Rocky 10.

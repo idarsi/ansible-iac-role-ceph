@@ -1,6 +1,6 @@
-> **Maturity State: Alpha**<br>
-> **RC Readiness: 52% (floor)**
-> **Assessment ref:** commit [`81bae73`](https://github.com/idarsi/ansible-iac-role-ceph/commit/81bae73)
+> **Maturity State: Beta**<br>
+> **RC Readiness: 73% (floor)**
+> **Assessment ref:** commit [`3706511`](https://github.com/idarsi/ansible-iac-role-ceph/commit/3706511)
 
 ANSIBLE-IAC-ROLE-CEPH
 ===============================
@@ -33,7 +33,7 @@ Supported platforms
 
 | Operating system                  | Supported versions                | Automated test coverage                   |
 |-----------------------------------|-----------------------------------|-------------------------------------------|
-| Rocky Linux                       | 9, 10 (intended; not verified)    | Validation scenario targets Rocky 9; install-mock targets Rocky 10 / Python 3.12 for generic Ansible-controller compatibility only. Neither establishes Rocky platform support; live support remains unverified. |
+| Rocky Linux                       | 9, 10 (intended; not verified)    | Rocky 9 validation container; Rocky 10 install-mock container; Rocky 10 Tentacle 20.2.4 KVM integration sequence passed. Rocky 9 live cluster and general platform support remain unverified. |
 
 Supported states
 ----------------
