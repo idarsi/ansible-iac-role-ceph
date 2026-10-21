@@ -37,20 +37,42 @@
         ansible_connection: containers.podman.podman
         ansible_host: "ceph-install-mock"
       loop: ["ceph-b", "ceph-c"]
-    - name: "Prepare the pre-existing mock SSH account on declared hosts"
-      ansible.builtin.shell: |
-        set -e
-        dnf -y install sudo >/dev/null
-        if ! /usr/bin/getent passwd molecule >/dev/null; then
-          /usr/sbin/useradd --create-home molecule
-        fi
-        password_hash=$(openssl rand -base64 48 | openssl passwd -6 -stdin)
-        /usr/sbin/usermod --password "$password_hash" molecule
-        unset password_hash
-        printf '%s\n' 'molecule ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/ceph-install-mock
-        chmod 0440 /etc/sudoers.d/ceph-install-mock
-        /usr/sbin/visudo -cf /etc/sudoers.d/ceph-install-mock
-        runuser -u molecule -- sudo -n true
+    - name: "Install sudo required by the mock SSH account probe"
+      ansible.builtin.package:
+        name: "sudo"
+        state: present
+      delegate_to: "{{ item }}"
+      loop: ["ceph-install-mock", "ceph-b", "ceph-c"]
+      run_once: true
+    - name: "Create the PAM-valid mock SSH account"
+      ansible.builtin.user:
+        name: "molecule"
+        create_home: true
+        password: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') | password_hash('sha512') }}"
+        update_password: "always"
+      no_log: true
+      delegate_to: "{{ item }}"
+      loop: ["ceph-install-mock", "ceph-b", "ceph-c"]
+      run_once: true
+    - name: "Authorize the mock SSH account for passwordless sudo"
+      ansible.builtin.copy:
+        content: "molecule ALL=(ALL:ALL) NOPASSWD: ALL\n"
+        dest: "/etc/sudoers.d/ceph-install-mock"
+        owner: "root"
+        group: "root"
+        mode: "0440"
+      delegate_to: "{{ item }}"
+      loop: ["ceph-install-mock", "ceph-b", "ceph-c"]
+      run_once: true
+    - name: "Validate mock sudo configuration"
+      ansible.builtin.command: "/usr/sbin/visudo -cf /etc/sudoers.d/ceph-install-mock"
+      changed_when: false
+      delegate_to: "{{ item }}"
+      loop: ["ceph-install-mock", "ceph-b", "ceph-c"]
+      run_once: true
+    - name: "Probe mock passwordless sudo as the SSH account"
+      ansible.builtin.command:
+        argv: ["/usr/sbin/runuser", "-u", "molecule", "--", "sudo", "-n", "true"]
       changed_when: false
       delegate_to: "{{ item }}"
       loop: ["ceph-install-mock", "ceph-b", "ceph-c"]
