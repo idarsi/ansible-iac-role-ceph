@@ -2,6 +2,12 @@
 # VALIDATING OSD DEVICE OWNERSHIP
 ###############################################################################
 
+- name: "Calculate expected OSD service ID"
+  ansible.builtin.set_fact:
+    ceph_expected_osd_service_id: >-
+      {{ 'device_' ~ ((iac_resource.iac_resource.host ~ '|' ~
+                       iac_resource.iac_resource.device) | hash('sha256')) }}
+
 - name: "Collect OSD service specifications claiming the requested device"
   ansible.builtin.set_fact:
     ceph_osd_device_claims: >-
@@ -17,7 +23,7 @@
       {{ ceph_exported_service_specs
          | selectattr('service_type', 'defined')
          | selectattr('service_type', 'equalto', 'osd')
-         | selectattr('service_id', 'equalto', iac_ceph_osd_service_id)
+         | selectattr('service_id', 'equalto', ceph_expected_osd_service_id)
          | list }}
     ceph_osd_inventory_hosts: >-
       {{ iac_resource.stdout | default('[]', true) | from_json
@@ -39,7 +45,7 @@
          | list | length) == 1
       - >-
         ceph_osd_device_claims | length == 0 or
-        (ceph_osd_device_claims | first).service_id == iac_ceph_osd_service_id
+        (ceph_osd_device_claims | first).service_id == ceph_expected_osd_service_id
       - >-
         ceph_osd_id_claims | length == 0 or
         (ceph_osd_id_claims | first).placement.keys() | list == ['hosts']
@@ -48,7 +54,7 @@
         (ceph_osd_id_claims | first).placement.hosts == [iac_resource.iac_resource.host]
       - >-
         ceph_osd_id_claims | length == 0 or
-        (ceph_osd_id_claims | first).service_name == 'osd.' ~ iac_ceph_osd_service_id
+        (ceph_osd_id_claims | first).service_name == 'osd.' ~ ceph_expected_osd_service_id
       - >-
         ceph_osd_id_claims | length == 0 or
         (ceph_osd_id_claims | first).spec.data_devices.paths == [iac_resource.iac_resource.device]
