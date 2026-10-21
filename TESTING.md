@@ -35,7 +35,7 @@ environment and confirming the `idarsi-test-bases` storage pool and shared
 `idarsi-test` network:
 
 ```bash
-export IDARSI_TEST_KVM_INSTALL_SOURCE=/path/to/Rocky-9-x86_64-dvd.iso
+export IDARSI_TEST_KVM_INSTALL_SOURCE=/path/to/Rocky-10-x86_64-dvd.iso
 export IDARSI_CEPH_KVM_DISPOSABLE=YES_I_WILL_DESTROY_THESE_VMS_AND_DISKS
 molecule test -s kvm-ceph
 ```
@@ -48,10 +48,11 @@ uses static addresses `.21`–`.23` on the shared NAT network and creates only
 two named ephemeral OSD volumes in the active `idarsi-test-bases` pool
 (override with `IDARSI_CEPH_OSD_VOLUME_POOL` if needed); it removes those
 volumes and the three shared-lifecycle guests at teardown. Never run it against valuable VMs
-or storage. Repeat separately with Rocky 10 by setting the install source to
-its ISO. Rocky 10 has passed this sequence; Rocky 9 live-cluster behavior has not been
-tested. Shared environment setup and state can differ between runs; confirm
-disposable guests/storage and required shared network/pool before execution.
+or storage. Rocky 10 has passed this sequence; Rocky 9 live-cluster behavior has not been
+tested. A Rocky 9 ISO can be substituted for a compatibility attempt, but Rocky 9 is not
+yet supported or verified for this live-cluster test. Shared environment setup and state
+can differ between runs; confirm disposable guests/storage and required shared network/pool
+before execution.
 
 Commands: `molecule test -s validation`; `molecule test -s install-mock`; `ansible-lint --profile production`; `ansible-playbook --syntax-check -i docs/inventory-minimal.yml docs/playbook-example.yml`.
 
