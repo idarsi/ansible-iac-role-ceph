@@ -83,7 +83,7 @@
   register: ceph_systemd_targets
 
 - name: "Enable time synchronization on declared systemd Ceph hosts"
-  ansible.builtin.service:
+  ansible.builtin.systemd_service:
     name: "chronyd"
     state: "started"
     enabled: true
