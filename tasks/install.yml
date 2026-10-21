@@ -64,7 +64,14 @@
     loop_var: iac_resource
   when: not iac_resource.skipped | default(false)
 
-- name: "Install Ceph bootstrap runtime prerequisites"
+- name: "Normalize declared Ceph host targets"
+  ansible.builtin.set_fact:
+    iac_ceph_host_targets: >-
+      {{ (iac_blueprint.ceph.monitors
+          + (iac_blueprint.ceph.osds | default([]) | map(attribute='host') | list))
+         | unique }}
+
+- name: "Install Ceph host runtime prerequisites"
   ansible.builtin.package:
     name:
       - "podman"
@@ -72,12 +79,22 @@
       - "chrony"
       - "python3"
     state: "present"
+  become: true
+  delegate_to: "{{ iac_resource }}"
+  loop: "{{ iac_ceph_host_targets }}"
+  loop_control:
+    loop_var: iac_resource
 
-- name: "Enable time synchronization for Ceph"
+- name: "Enable time synchronization on declared Ceph hosts"
   ansible.builtin.service:
     name: "chronyd"
     state: "started"
     enabled: true
+  become: true
+  delegate_to: "{{ iac_resource }}"
+  loop: "{{ iac_ceph_host_targets }}"
+  loop_control:
+    loop_var: iac_resource
   when: ansible_service_mgr | default("") == "systemd"
 
 - name: "Require a cephadm artifact with a pinned checksum"
@@ -161,10 +178,7 @@
     manage_dir: true
   become: true
   delegate_to: "{{ iac_resource }}"
-  loop: >-
-    {{ (iac_blueprint.ceph.monitors
-        + (iac_blueprint.ceph.osds | default([]) | map(attribute='host') | list))
-       | unique }}
+  loop: "{{ iac_ceph_host_targets }}"
   loop_control:
     loop_var: iac_resource
   register: ceph_public_key_distribution
@@ -221,10 +235,7 @@
       - "add"
       - "{{ item }}"
       - "{{ hostvars[item].ansible_host | default(item) }}"
-  loop: >-
-    {{ (iac_blueprint.ceph.monitors
-        + (iac_blueprint.ceph.osds | default([]) | map(attribute='host') | list))
-       | unique | difference([inventory_hostname]) }}
+  loop: "{{ iac_ceph_host_targets | difference([inventory_hostname]) }}"
   changed_when: true
   when: item not in (ceph_host_list.stdout | from_json | map(attribute='hostname') | list)
 
@@ -237,10 +248,7 @@
   delay: 5
   until: >-
     (iac_resource in (ceph_registered_hosts.stdout | from_json | map(attribute='hostname') | list))
-  loop: >-
-    {{ (iac_blueprint.ceph.monitors
-        + (iac_blueprint.ceph.osds | default([]) | map(attribute='host') | list))
-       | unique }}
+  loop: "{{ iac_ceph_host_targets }}"
   loop_control:
     loop_var: iac_resource
 

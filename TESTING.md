@@ -18,8 +18,8 @@ acceptance/convergence, disk safety, OSD provisioning, HA, or platform support.
 | Platform/image | Ansible or application versions | Molecule scenarios | Main coverage |
 |---|---|---|---|
 | Rocky Linux 9 Podman container | Ansible Core >=2.19 | validation — latest attempt blocked before actions | Accepted and rejected blueprint inputs; validation-only non-mutation |
-| Rocky Linux 9 Podman container | Ansible Core >=2.19 | install-mock — latest attempt blocked before actions | Installed cephadm version check, pool conflict preflight ahead of mutation, accepted and duplicate-ambiguous/rejected OSD inventory, pinned image and repeated install |
-| Rocky Linux 9 KVM guests (three-node cluster) | Ceph Tentacle 20.2.4; Ansible Core >=2.19 | kvm-ceph — not run; prerequisites absent | Real bootstrap/host registration, 3 monitors, active manager, two scenario-owned OSD disks, pool, non-ERR health, repeat convergence and scoped cleanup |
+| Rocky Linux 9 Podman container | Ansible Core >=2.19 | install-mock — latest attempt blocked before actions | Installed cephadm version check, host prerequisite package task across declared targets (container mock skips chronyd), pool conflict preflight ahead of mutation, accepted and duplicate-ambiguous/rejected OSD inventory, pinned image and repeated install |
+| Rocky Linux 9/10 KVM guests (three-node cluster) | Ceph Tentacle 20.2.4; Ansible Core >=2.19 | kvm-ceph — not run; prerequisites absent | Per-declared-host Podman/LVM2/chrony/python3 prerequisites and chronyd activation before bootstrap/host registration; real bootstrap/host registration, 3 monitors, active manager, two scenario-owned OSD disks, pool, non-ERR health, repeat convergence and scoped cleanup |
 
 Use the pre-existing shared `idarsi-ansible-test-environments` environment; follow that repository's setup instructions to activate it.
 
@@ -39,7 +39,10 @@ export IDARSI_CEPH_KVM_DISPOSABLE=YES_I_WILL_DESTROY_THESE_VMS_AND_DISKS
 molecule test -s kvm-ceph
 ```
 
-The exact acknowledgment is required by both create and destroy. The scenario
+The exact acknowledgment is required by both create and destroy. Before
+bootstrap or host registration, the role installs Podman, LVM2, chrony, and
+Python 3 on every unique declared monitor/OSD host, then enables/starts chronyd
+on systemd hosts. Undeclared inventory hosts are not targeted. The scenario
 uses static addresses `.21`–`.23` on the shared NAT network and creates only
 two named ephemeral OSD volumes in the active `idarsi-test-bases` pool
 (override with `IDARSI_CEPH_OSD_VOLUME_POOL` if needed); it removes those
