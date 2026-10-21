@@ -248,13 +248,13 @@
               ansible.builtin.assert:
                 that:
                   - ansible_failed_task.name == "Require existing non-root Ceph accounts"
-                  - ceph_missing_user in ansible_failed_result.msg
+                  - ceph_missing_user in (ansible_failed_result | string)
                   - >-
                     'must already exist on declared host' in
-                    ansible_failed_result.msg
+                    (ansible_failed_result | string)
                   - >-
                     'this role will not create accounts' in
-                    ansible_failed_result.msg
+                    (ansible_failed_result | string)
           always:
             - name: "Assert missing-account rejection preceded all mutation"
               ansible.builtin.shell: |
