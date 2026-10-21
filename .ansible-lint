@@ -1,0 +1,12 @@
+profile: production
+exclude_paths:
+  # These are task fragments included by the validation scenario, not plays.
+  - molecule/validation/invalid_osd.yml
+  - molecule/validation/invalid_pool.yml
+  - molecule/validation/reject_osd_without_opt_in.yml
+skip_list:
+  # Long shell/JSON fixtures and exact-output assertions are intentionally
+  # kept intact; yaml[line-length] is the only remaining finding for them.
+  - yaml[line-length]
+  # Local role-path imports are required when testing this role from its repo.
+  - role-name[path]

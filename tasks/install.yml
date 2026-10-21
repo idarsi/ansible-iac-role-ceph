@@ -7,6 +7,109 @@
 #
 ###############################################################################
 
+- name: "Verify declared hosts have the non-root Ceph SSH account"
+  ansible.builtin.getent:
+    database: "passwd"
+    key: "{{ iac_blueprint.ceph.ssh_user }}"
+    fail_key: false
+  delegate_to: "{{ iac_resource }}"
+  loop: "{{ iac_ceph_host_targets }}"
+  loop_control:
+    loop_var: iac_resource
+  when: (iac_blueprint.ceph.ssh_user | default('root')) != 'root'
+  register: ceph_ssh_user_lookup
+
+- name: "Require existing non-root Ceph accounts"
+  ansible.builtin.assert:
+    that:
+      - >-
+        iac_resource.ansible_facts.getent_passwd.get(
+        iac_blueprint.ceph.ssh_user) is not none
+    fail_msg: >-
+      Ceph SSH user '{{ iac_blueprint.ceph.ssh_user }}' must already exist on
+      declared host '{{ iac_resource.iac_resource }}'; this role will not create accounts.
+  loop: "{{ ceph_ssh_user_lookup.results | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
+  when: not iac_resource.skipped | default(false)
+
+- name: "Verify passwordless sudo for the non-root Ceph SSH user"
+  ansible.builtin.command:
+    argv: ["/usr/sbin/runuser", "-u", "{{ iac_blueprint.ceph.ssh_user }}", "--", "sudo", "-n", "true"]
+  become: true
+  changed_when: false
+  failed_when: false
+  delegate_to: "{{ iac_resource }}"
+  loop: "{{ iac_ceph_host_targets }}"
+  loop_control:
+    loop_var: iac_resource
+  when: (iac_blueprint.ceph.ssh_user | default('root')) != 'root'
+  register: ceph_sudo_check
+
+- name: "Require passwordless sudo for the non-root Ceph SSH user"
+  ansible.builtin.assert:
+    that:
+      - iac_resource.rc == 0
+    fail_msg: >-
+      Ceph SSH user '{{ iac_blueprint.ceph.ssh_user }}' must have passwordless sudo
+      on declared host '{{ iac_resource.iac_resource }}'.
+  loop: "{{ ceph_sudo_check.results | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
+  when: not iac_resource.skipped | default(false)
+
+- name: "Install Ceph host runtime prerequisites"
+  ansible.builtin.package:
+    name:
+      - "podman"
+      - "lvm2"
+      - "chrony"
+      - "python3"
+    state: "present"
+  become: true
+  delegate_to: "{{ iac_resource }}"
+  loop: "{{ iac_ceph_host_targets }}"
+  loop_control:
+    loop_var: iac_resource
+
+- name: "Detect systemd on each declared Ceph host"
+  ansible.builtin.stat:
+    path: "/run/systemd/system"
+  become: true
+  delegate_to: "{{ iac_resource }}"
+  loop: "{{ iac_ceph_host_targets }}"
+  loop_control:
+    loop_var: iac_resource
+  register: ceph_systemd_targets
+
+- name: "Enable time synchronization on declared systemd Ceph hosts"
+  ansible.builtin.systemd_service:
+    name: "chronyd"
+    state: "started"
+    enabled: true
+  become: true
+  delegate_to: "{{ iac_resource.iac_resource }}"
+  loop: "{{ ceph_systemd_targets.results }}"
+  loop_control:
+    loop_var: iac_resource
+  when: iac_resource.stat.exists
+
+- name: "Require a cephadm artifact with a pinned checksum"
+  ansible.builtin.assert:
+    that:
+      - ceph_version == "20.2.4"
+    fail_msg: "The verified cephadm SHA-256 is available only for Ceph Tentacle 20.2.4."
+
+- name: "Install pinned Ceph Tentacle cephadm bootstrap executable"
+  ansible.builtin.get_url:
+    url: "https://download.ceph.com/rpm-{{ ceph_version }}/el9/noarch/cephadm"
+    dest: "/usr/sbin/cephadm"
+    checksum: "sha256:5b78c8d5772ef7c5c8619dac6ee0b36716b829338ea7a11c9f2b896626ab354f"
+    mode: "0755"
+    owner: "root"
+    group: "root"
+    validate_certs: true
+
 - name: "Require cephadm on bootstrap host"
   ansible.builtin.command:
     argv:
@@ -14,6 +117,22 @@
       - "version"
   changed_when: false
   check_mode: false
+  register: cephadm_version_result
+
+- name: "Parse installed cephadm version"
+  ansible.builtin.set_fact:
+    cephadm_installed_version: "{{ cephadm_version_result.stdout | regex_search('[0-9]+\\.[0-9]+\\.[0-9]+') | default('', true) }}"
+
+- name: "Require a known compatible cephadm version"
+  ansible.builtin.assert:
+    that:
+      - cephadm_installed_version is string
+      - cephadm_installed_version | length > 0
+      - cephadm_installed_version == ceph_version
+    fail_msg: >-
+      Cannot safely use installed cephadm version
+      '{{ cephadm_version_result.stdout }}' with pinned Ceph {{ ceph_version }};
+      the exact pinned version {{ ceph_version }} is required.
 
 - name: "Require a bootstrap monitor address"
   ansible.builtin.assert:
@@ -25,42 +144,231 @@
   ansible.builtin.command:
     argv:
       - "cephadm"
+      - "--image"
+      - "{{ ceph_container_image }}"
       - "bootstrap"
       - "--mon-ip"
       - "{{ hostvars[inventory_hostname].ansible_host }}"
       - "--cluster-network"
       - "{{ iac_blueprint.ceph.cluster_network }}"
-    creates: "/etc/ceph/ceph.conf"
+      - "--ssh-user"
+      - "{{ iac_blueprint.ceph.ssh_user | default('root') }}"
+    creates: "{{ ceph_bootstrap_sentinel }}"
   when: iac_blueprint.ceph.cluster_network is defined
+
+- name: "Read the Ceph cluster public SSH key"
+  ansible.builtin.slurp:
+    src: "{{ ceph_ssh_public_key_path }}"
+  register: ceph_cluster_public_key
+
+- name: "Require a non-empty Ceph cluster public SSH key"
+  ansible.builtin.assert:
+    that:
+      - ceph_cluster_public_key.content | b64decode | trim | length > 0
+    fail_msg: "Ceph bootstrap did not provide a readable public key at {{ ceph_ssh_public_key_path }}"
+
+- name: "Install the Ceph public key for declared monitor and OSD hosts"
+  ansible.posix.authorized_key:
+    user: "{{ iac_blueprint.ceph.ssh_user | default('root') }}"
+    key: "{{ ceph_cluster_public_key.content | b64decode | trim }}"
+    state: "present"
+    manage_dir: true
+  become: true
+  delegate_to: "{{ iac_resource }}"
+  loop: "{{ iac_ceph_host_targets }}"
+  loop_control:
+    loop_var: iac_resource
+  register: ceph_public_key_distribution
+
+- name: "Record declared Ceph public key distribution targets"
+  ansible.builtin.set_fact:
+    iac_ceph_ssh_key_distribution_targets: "{{ ceph_public_key_distribution.results | map(attribute='iac_resource') | list }}"
+
+- name: "Read existing pools"
+  ansible.builtin.command:
+    argv: ["cephadm", "shell", "--", "ceph", "osd", "pool", "ls", "--format", "json"]
+  register: ceph_pool_list
+  changed_when: false
+
+- name: "Read PG count for each declared pool that already exists"
+  ansible.builtin.command:
+    argv: ["cephadm", "shell", "--", "ceph", "osd", "pool", "get", "{{ iac_resource.name }}", "pg_num", "--format", "json"]
+  register: ceph_pool_properties
+  changed_when: false
+  loop: "{{ iac_blueprint.ceph.pools | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
+  when: iac_resource.name in (ceph_pool_list.stdout | from_json)
+
+- name: "Reject existing pools with a conflicting PG count"
+  ansible.builtin.assert:
+    that:
+      - (iac_resource.stdout | from_json).pg_num == (iac_resource.iac_resource.pg_num | default(32))
+    fail_msg: >-
+      Existing pool {{ iac_resource.iac_resource.name }} has pg_num
+      {{ (iac_resource.stdout | from_json).pg_num }}, but the blueprint requests
+      {{ iac_resource.iac_resource.pg_num | default(32) }}. Pool properties are
+      not changed automatically.
+  loop: "{{ ceph_pool_properties.results | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
+  when: not iac_resource.skipped | default(false)
 
 - name: "Read registered ceph hosts"
   ansible.builtin.command:
-    argv: ["ceph", "orch", "host", "ls", "--format", "json"]
+    argv: ["cephadm", "shell", "--", "ceph", "orch", "host", "ls", "--format", "json"]
   register: ceph_host_list
   changed_when: false
 
-- name: "Register non-bootstrap monitor hosts"
+- name: "Register declared non-bootstrap Ceph hosts"
   ansible.builtin.command:
     argv:
+      - "cephadm"
+      - "shell"
+      - "--"
       - "ceph"
       - "orch"
       - "host"
       - "add"
       - "{{ item }}"
       - "{{ hostvars[item].ansible_host | default(item) }}"
-  loop: "{{ iac_blueprint.ceph.monitors | difference([inventory_hostname]) }}"
+  loop: "{{ iac_ceph_host_targets | difference([inventory_hostname]) }}"
   changed_when: true
   when: item not in (ceph_host_list.stdout | from_json | map(attribute='hostname') | list)
 
-- name: "Read existing pools"
+- name: "Wait for each declared host to be registered with the orchestrator"
   ansible.builtin.command:
-    argv: ["ceph", "osd", "pool", "ls", "--format", "json"]
-  register: ceph_pool_list
+    argv: ["cephadm", "shell", "--", "ceph", "orch", "host", "ls", "--format", "json"]
+  register: ceph_registered_hosts
   changed_when: false
+  retries: 12
+  delay: 5
+  until: >-
+    (iac_resource in (ceph_registered_hosts.stdout | from_json | map(attribute='hostname') | list))
+  loop: "{{ iac_ceph_host_targets }}"
+  loop_control:
+    loop_var: iac_resource
+
+# Host registration is required before refreshing inventory for newly declared
+# OSD hosts. Ceph inventory scans are asynchronous and may initially be stale.
+- name: "Export existing orchestrator service specifications"
+  ansible.builtin.command:
+    argv: ["cephadm", "shell", "--", "ceph", "orch", "ls", "--export"]
+  register: ceph_service_specs_export
+  changed_when: false
+  failed_when: false
+  when:
+    - iac_blueprint.ceph.osds | default([]) | length > 0
+    - iac_blueprint.ceph.allow_osd_provisioning | default(false)
+
+- name: "Normalize exported orchestrator service specifications"
+  ansible.builtin.set_fact:
+    ceph_exported_service_specs: >-
+      {{ ceph_service_specs_export.stdout | default('') | from_yaml_all
+         | reject('none') | list }}
+  when:
+    - iac_blueprint.ceph.osds | default([]) | length > 0
+    - iac_blueprint.ceph.allow_osd_provisioning | default(false)
+
+- name: "Require exported orchestrator service specifications to be valid"
+  ansible.builtin.assert:
+    that:
+      - ceph_service_specs_export.rc == 0
+      - ceph_service_specs_export.stdout is defined
+      - ceph_exported_service_specs | select('mapping') | list | length == ceph_exported_service_specs | length
+      - ceph_exported_service_specs | selectattr('service_type', 'defined') | list | length == ceph_exported_service_specs | length
+    fail_msg: "Cannot safely validate OSD ownership: ceph orch ls --export failed or returned invalid YAML."
+  when:
+    - iac_blueprint.ceph.osds | default([]) | length > 0
+    - iac_blueprint.ceph.allow_osd_provisioning | default(false)
+
+- name: "Refresh orchestrator OSD inventory and wait for each declared device"
+  ansible.builtin.command:
+    argv:
+      - "cephadm"
+      - "shell"
+      - "--"
+      - "ceph"
+      - "orch"
+      - "device"
+      - "ls"
+      - "--hostname"
+      - "{{ iac_resource.host }}"
+      - "--refresh"
+      - "--format"
+      - "json"
+  register: ceph_osd_device_inventory
+  changed_when: false
+  failed_when: false
+  retries: 12
+  delay: 5
+  until: >-
+    ceph_osd_device_inventory.rc == 0 and
+    (ceph_osd_device_inventory.stdout | default('[]', true) | from_json
+     | selectattr('name', 'equalto', iac_resource.host)
+     | map(attribute='devices') | flatten
+     | selectattr('path', 'equalto', iac_resource.device)
+     | list | length) > 0
+  loop: "{{ iac_blueprint.ceph.osds | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
+  when:
+    - iac_blueprint.ceph.osds | default([]) | length > 0
+    - iac_blueprint.ceph.allow_osd_provisioning | default(false)
+
+- name: "Validate ownership and availability of declared OSD devices"
+  ansible.builtin.include_tasks: validate_osd_device.yml
+  loop: "{{ ceph_osd_device_inventory.results | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
+  when:
+    - iac_blueprint.ceph.osds | default([]) | length > 0
+    - iac_blueprint.ceph.allow_osd_provisioning | default(false)
+
+- name: "Converge monitor daemon placement"
+  ansible.builtin.command:
+    argv: ["cephadm", "shell", "--", "ceph", "orch", "apply", "-i", "-"]
+    stdin: "{{ {'service_type': 'mon', 'placement': {'hosts': iac_blueprint.ceph.monitors}} | to_json }}"
+  changed_when: false
+
+- name: "Converge manager daemon placement"
+  ansible.builtin.command:
+    argv: ["cephadm", "shell", "--", "ceph", "orch", "apply", "-i", "-"]
+    stdin: "{{ {'service_type': 'mgr', 'placement': {'hosts': iac_blueprint.ceph.monitors}} | to_json }}"
+  changed_when: false
+
+- name: "Apply declarative specifications for declared OSD devices"
+  ansible.builtin.command:
+    argv:
+      - "cephadm"
+      - "shell"
+      - "--"
+      - "ceph"
+      - "orch"
+      - "apply"
+      - "-i"
+      - "-"
+    stdin: >-
+      {{ {
+        'service_type': 'osd',
+        'service_id': iac_ceph_osd_service_id,
+        'placement': {'hosts': [iac_resource.host]},
+        'spec': {'data_devices': {'paths': [iac_resource.device]}}
+      } | to_json }}
+  loop: "{{ iac_blueprint.ceph.osds | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
+  changed_when: false
+  when:
+    - iac_blueprint.ceph.osds | default([]) | length > 0
+    - iac_blueprint.ceph.allow_osd_provisioning | default(false)
 
 - name: "Create declared pools"
   ansible.builtin.command:
     argv:
+      - "cephadm"
+      - "shell"
+      - "--"
       - "ceph"
       - "osd"
       - "pool"
@@ -68,5 +376,6 @@
       - "{{ item.name }}"
       - "{{ item.pg_num | default(32) }}"
   loop: "{{ iac_blueprint.ceph.pools | default([]) }}"
-  changed_when: item.name not in (ceph_pool_list.stdout | from_json)
+  register: ceph_pool_create
+  changed_when: ceph_pool_create.rc == 0
   when: item.name not in (ceph_pool_list.stdout | from_json)

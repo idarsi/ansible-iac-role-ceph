@@ -25,7 +25,8 @@
       - iac_blueprint.ceph.cluster_name is defined
       - iac_blueprint.ceph.cluster_name is string
       - iac_blueprint.ceph.cluster_name | length > 0
-    fail_msg: "ceph.cluster_name must be a non-empty string"
+      - iac_blueprint.ceph.cluster_name == "ceph"
+    fail_msg: "ceph.cluster_name must be 'ceph'; custom cluster names are unsupported"
 
 - name: "Checking monitor topology"
   ansible.builtin.assert:
@@ -38,10 +39,36 @@
       - inventory_hostname in iac_blueprint.ceph.monitors
     fail_msg: "ceph.monitors must be a unique odd-sized list of at least three inventory hosts including the current bootstrap host"
 
+- name: "Checking monitor hosts exist in inventory"
+  ansible.builtin.assert:
+    that:
+      - iac_blueprint.ceph.monitors | difference(groups['all']) | length == 0
+    fail_msg: "Every declared Ceph monitor must be an Ansible inventory host"
+
+- name: "Checking SSH user"
+  ansible.builtin.assert:
+    that:
+      - iac_blueprint.ceph.ssh_user | default('root') is string
+      - iac_blueprint.ceph.ssh_user | default('root') is match('^[a-z_][a-z0-9_-]{0,30}[$]?$')
+      - iac_blueprint.ceph.ssh_user | default('root') | length <= 31
+    fail_msg: "ceph.ssh_user must be a supported Linux account name of at most 31 characters"
+
+- name: "Checking explicit OSD provisioning opt-in"
+  ansible.builtin.assert:
+    that:
+      - (iac_blueprint.ceph.allow_osd_provisioning | default(false)) | type_debug == "bool"
+      - >-
+        (iac_blueprint.ceph.osds | default([]) | length == 0)
+        or (iac_blueprint.ceph.allow_osd_provisioning | default(false))
+    fail_msg: "ceph.allow_osd_provisioning must be a boolean and must be true when OSD devices are declared"
+
 - name: "Checking OSD device definitions"
   ansible.builtin.assert:
     that:
       - iac_blueprint.ceph.osds | default([]) | type_debug == "list"
+      - >-
+        (iac_blueprint.ceph.osds | default([]) | select('mapping') | list | length)
+        == (iac_blueprint.ceph.osds | default([]) | length)
       - >-
         (iac_blueprint.ceph.osds | default([]) | selectattr('host', 'defined') | list | length)
         == (iac_blueprint.ceph.osds | default([]) | length)
@@ -49,39 +76,64 @@
         (iac_blueprint.ceph.osds | default([]) | selectattr('device', 'defined') | list | length)
         == (iac_blueprint.ceph.osds | default([]) | length)
       - >-
-        (iac_blueprint.ceph.osds | default([]) | selectattr('host', 'in', iac_blueprint.ceph.monitors) | list | length)
+        (iac_blueprint.ceph.osds | default([]) | selectattr('host', 'defined')
+        | selectattr('host', 'string') | rejectattr('host', 'equalto', '') | list | length)
         == (iac_blueprint.ceph.osds | default([]) | length)
       - >-
-        (iac_blueprint.ceph.osds | default([]) | map(attribute='device') | unique | list | length)
+        (iac_blueprint.ceph.osds | default([]) | selectattr('device', 'defined')
+        | selectattr('device', 'string') | rejectattr('device', 'equalto', '') | list | length)
         == (iac_blueprint.ceph.osds | default([]) | length)
-    fail_msg: "OSDs require unique explicit devices on declared monitor hosts; automatic discovery is unsupported"
+      - >-
+        (iac_blueprint.ceph.osds | default([]) | selectattr('device', 'defined')
+        | selectattr('device', 'string')
+        | selectattr('device', 'match', '^/dev/[A-Za-z0-9._/-]+$') | list | length)
+        == (iac_blueprint.ceph.osds | default([]) | length)
+      - >-
+        (iac_blueprint.ceph.osds | default([]) | selectattr('device', 'defined')
+        | selectattr('device', 'string') | reject('search', '/\\.\\.') | list | length)
+        == (iac_blueprint.ceph.osds | default([]) | length)
+      - >-
+        (iac_blueprint.ceph.osds | default([]) | selectattr('host', 'in', groups['all']) | list | length)
+        == (iac_blueprint.ceph.osds | default([]) | length)
+      - >-
+        ((iac_blueprint.ceph.osds | default([]) | map(attribute='host') | list)
+        | zip(iac_blueprint.ceph.osds | default([]) | map(attribute='device') | list)
+        | map('join', '|') | unique | list | length)
+        == (iac_blueprint.ceph.osds | default([]) | length)
+    fail_msg: "OSDs require unique host/device pairs using explicit /dev paths on declared inventory hosts; automatic discovery is unsupported"
 
 - name: "Checking pool definitions"
   ansible.builtin.assert:
     that:
       - iac_blueprint.ceph.pools | default([]) | type_debug == "list"
       - >-
+        (iac_blueprint.ceph.pools | default([]) | select('mapping') | list | length)
+        == (iac_blueprint.ceph.pools | default([]) | length)
+      - >-
         (iac_blueprint.ceph.pools | default([]) | selectattr('name', 'defined') | list | length)
         == (iac_blueprint.ceph.pools | default([]) | length)
       - >-
         (iac_blueprint.ceph.pools | default([]) | map(attribute='name') | unique | list | length)
         == (iac_blueprint.ceph.pools | default([]) | length)
-    fail_msg: "ceph.pools must contain uniquely named pools"
+      - >-
+        (iac_blueprint.ceph.pools | default([]) | selectattr('name', 'defined')
+        | selectattr('name', 'string') | rejectattr('name', 'equalto', '') | list | length)
+        == (iac_blueprint.ceph.pools | default([]) | length)
+      - >-
+        (iac_blueprint.ceph.pools | default([]) | selectattr('pg_num', 'defined')
+        | selectattr('pg_num', 'integer') | list | length)
+        == (iac_blueprint.ceph.pools | default([]) | selectattr('pg_num', 'defined') | list | length)
+      - >-
+        (iac_blueprint.ceph.pools | default([]) | selectattr('pg_num', 'defined')
+        | selectattr('pg_num', 'integer') | selectattr('pg_num', 'gt', 0) | list | length)
+        == (iac_blueprint.ceph.pools | default([]) | selectattr('pg_num', 'defined') | list | length)
+    fail_msg: "ceph.pools must contain unique non-empty names and positive integer pg_num values"
 
-- name: "Checking destructive OSD opt-in"
+- name: "Checking bootstrap host selection before installation"
   ansible.builtin.assert:
     that:
-      - iac_blueprint.ceph.allow_osd_device_wipe | default(false) | bool
-    fail_msg: "OSD provisioning can destroy device data; explicitly set allow_osd_device_wipe: true"
-  when:
-    - iac_state == "install"
-    - iac_blueprint.ceph.osds | default([]) | length > 0
-
-- name: "Rejecting unsupported OSD deployment before mutation"
-  ansible.builtin.assert:
-    that:
-      - iac_blueprint.ceph.osds | default([]) | length == 0
-    fail_msg: "OSD deployment is not implemented; set osds to an empty list"
+      - inventory_hostname == iac_blueprint.ceph.monitors | first
+    fail_msg: "Run install only on the first host in ceph.monitors; it is the designated bootstrap host"
   when: iac_state == "install"
 
 - name: "Checking cluster network before installation"

@@ -1,0 +1,58 @@
+---
+- name: "Confirm OSD provisioning is rejected without opt-in"
+  block:
+    - name: "Declare monitor peers used by preflight validation"
+      ansible.builtin.add_host:
+        name: "{{ item }}"
+      loop: ["ceph-b", "ceph-c"]
+
+    - name: "Attempt install with OSD declaration but no opt-in"
+      ansible.builtin.include_role:
+        name: "{{ playbook_dir }}/../.."
+      vars:
+        state: "install"
+        ceph_bootstrap_sentinel: "/tmp/ceph-validation-state/ceph.conf"
+        iac_blueprint:
+          ceph:
+            cluster_name: "ceph"
+            monitors: ["ceph-validation", "ceph-b", "ceph-c"]
+            cluster_network: "192.0.2.0/24"
+            osds: [{ host: "ceph-validation", device: "/dev/sdb" }]
+            pools: []
+    - name: "Fail if undeclared provisioning is accepted"
+      ansible.builtin.fail:
+        msg: "OSD declaration without opt-in was unexpectedly accepted"
+  rescue:
+    - name: "Assert opt-in validation failed before any Ceph command"
+      ansible.builtin.assert:
+        that:
+          - "'ceph.allow_osd_provisioning' in ansible_failed_result.msg"
+          - ansible_failed_task.name == "Checking explicit OSD provisioning opt-in"
+        fail_msg: "OSD without opt-in failed for an unexpected reason: {{ ansible_failed_result.msg }}"
+
+    - name: "Record expected preflight rejection"
+      ansible.builtin.set_fact:
+        osd_opt_in_rejected: true
+
+- name: "Assert opt-in rejection was observed"
+  ansible.builtin.assert:
+    that:
+      - osd_opt_in_rejected | default(false)
+    fail_msg: "Install unexpectedly continued past OSD provisioning preflight"
+
+- name: "Check Ceph configuration was not created by rejected install"
+  ansible.builtin.stat:
+    path: "/tmp/ceph-validation-state/ceph.conf"
+  register: rejected_install_config
+
+- name: "Check cephadm was not installed by rejected install"
+  ansible.builtin.stat:
+    path: "/usr/sbin/cephadm"
+  register: rejected_install_cephadm
+
+- name: "Assert rejected install caused no Ceph mutation"
+  ansible.builtin.assert:
+    that:
+      - not rejected_install_config.stat.exists
+      - not rejected_install_cephadm.stat.exists
+    fail_msg: "OSD preflight rejection occurred after Ceph state was changed"

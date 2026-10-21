@@ -1,0 +1,171 @@
+---
+- name: Safely remove scenario-owned disks and guests
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    molecule_config: "{{ lookup('file', lookup('env', 'MOLECULE_FILE')) | from_yaml }}"
+    suffix: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') | hash('sha256') | truncate(8, true, '') }}"
+    test_environment: "{{ lookup('env', 'IDARSI_TEST_ENVIRONMENT') }}"
+    kvm_base_dir: "/var/lib/libvirt/images/idarsi-test-bases"
+    osd_volume_pool: "{{ lookup('env', 'IDARSI_CEPH_OSD_VOLUME_POOL') | default('idarsi-test-bases', true) }}"
+  tasks:
+    - name: Validate OSD volume pool name
+      ansible.builtin.assert:
+        that:
+          - osd_volume_pool is string
+          - osd_volume_pool | length > 0
+          - osd_volume_pool is match('^[A-Za-z0-9_.-]+$')
+        fail_msg: "IDARSI_CEPH_OSD_VOLUME_POOL must be a non-empty libvirt pool name containing only letters, digits, underscores, dots, or hyphens."
+
+    - name: Require explicit destruction authorization
+      ansible.builtin.assert:
+        that:
+          - lookup('env', 'IDARSI_CEPH_KVM_DISPOSABLE') == 'YES_I_WILL_DESTROY_THESE_VMS_AND_DISKS'
+          - test_environment | length > 0
+        fail_msg: "Refusing to remove Ceph scenario VMs/disks without exact destructive-test acknowledgment."
+
+    - name: Validate canonical KVM base directory and reject symlink components
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import os, stat, sys
+            path = sys.argv[1]
+            current = ''
+            for component in path.split('/'):
+                if not component:
+                    continue
+                current += '/' + component
+                try:
+                    mode = os.lstat(current).st_mode
+                except FileNotFoundError:
+                    continue
+                if stat.S_ISLNK(mode):
+                    raise SystemExit(f"Refusing symlink path component: {current}")
+            if os.path.realpath(path) != path:
+                raise SystemExit(f"KVM base directory is not canonical: {path}")
+          - "{{ kvm_base_dir }}"
+      changed_when: false
+
+    - name: Require the configured OSD volume pool to be active
+      ansible.builtin.shell: |
+        set -euo pipefail
+        pool_info=$(virsh --connect "$LIBVIRT_URI" pool-info "$OSD_VOLUME_POOL")
+        [[ "$pool_info" =~ State:[[:space:]]+running([[:space:]]|$) ]]
+      args:
+        executable: /bin/bash
+      environment:
+        LIBVIRT_URI: "{{ molecule_config.driver.libvirt_uri | default('qemu:///system') }}"
+        OSD_VOLUME_POOL: "{{ osd_volume_pool }}"
+      changed_when: false
+
+    - name: Attempt removal of only the two named OSD volumes and attachments
+      ansible.builtin.shell: |
+        set -uo pipefail
+        errors=()
+        error_count=0
+        for vm in ceph-b ceph-c; do
+          volume="idarsi-ceph-${DISK_SUFFIX}-${vm}-osd.qcow2"
+          domain="molecule-${vm}-${DISK_SUFFIX}"
+          if virsh --connect "$LIBVIRT_URI" dominfo "$domain" >/dev/null 2>&1; then
+            if ! block_devices=$(virsh --connect "$LIBVIRT_URI" domblklist --details "$domain"); then
+              errors+=("list block devices for $domain failed")
+              error_count=$((error_count + 1))
+              continue
+            fi
+            if grep -Eq '^[[:space:]]*file[[:space:]]+disk[[:space:]]+vdb[[:space:]]' <<<"$block_devices"; then
+              if ! virsh --connect "$LIBVIRT_URI" detach-disk "$domain" vdb --config --live; then
+                errors+=("detach disk vdb from $domain failed")
+                error_count=$((error_count + 1))
+              fi
+            fi
+          fi
+        done
+        if ((error_count > 0)); then
+          printf '%s\n' "${errors[@]}" >&2
+          exit 1
+        fi
+      args:
+        executable: /bin/bash
+      environment:
+        DISK_SUFFIX: "{{ suffix }}"
+        LIBVIRT_URI: "{{ molecule_config.driver.libvirt_uri | default('qemu:///system') }}"
+        OSD_VOLUME_POOL: "{{ osd_volume_pool }}"
+      register: disk_cleanup
+      failed_when: false
+      changed_when: true
+
+    - name: Destroy only the three guests through shared lifecycle helper
+      ansible.builtin.command:
+        argv:
+          - "{{ test_environment }}/scripts/kvm-vm"
+          - destroy
+          - "{{ item }}"
+      environment:
+        MOLECULE_EPHEMERAL_DIRECTORY: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}"
+        KVM_LIBVIRT_URI: "{{ molecule_config.driver.libvirt_uri | default('qemu:///system') }}"
+      loop: ["ceph-a", "ceph-b", "ceph-c"]
+      register: destroyed_guests
+      failed_when: false
+      changed_when: true
+
+    - name: Remove only the two named OSD volumes after successful guest teardown
+      ansible.builtin.shell: |
+        set -uo pipefail
+        errors=()
+        error_count=0
+        for vm in ceph-b ceph-c; do
+          volume="idarsi-ceph-${DISK_SUFFIX}-${vm}-osd.qcow2"
+          if virsh --connect "$LIBVIRT_URI" vol-info "$volume" --pool "$OSD_VOLUME_POOL" >/dev/null 2>&1; then
+            if ! virsh --connect "$LIBVIRT_URI" vol-delete "$volume" --pool "$OSD_VOLUME_POOL"; then
+              errors+=("delete volume $volume failed")
+              error_count=$((error_count + 1))
+            fi
+          fi
+        done
+        if ((error_count > 0)); then
+          printf '%s\n' "${errors[@]}" >&2
+          exit 1
+        fi
+      args:
+        executable: /bin/bash
+      environment:
+        DISK_SUFFIX: "{{ suffix }}"
+        LIBVIRT_URI: "{{ molecule_config.driver.libvirt_uri | default('qemu:///system') }}"
+        OSD_VOLUME_POOL: "{{ osd_volume_pool }}"
+      register: disk_cleanup_retry
+      failed_when: false
+      changed_when: true
+      when: destroyed_guests.results | selectattr('rc', 'ne', 0) | list | length == 0
+
+    - name: Remove only this scenario's guest OS disks after successful guest teardown
+      ansible.builtin.file:
+        path: "{{ kvm_base_dir }}/molecule-{{ item }}-{{ suffix }}.qcow2"
+        state: absent
+      loop: ["ceph-a", "ceph-b", "ceph-c"]
+      when: destroyed_guests.results | selectattr('rc', 'ne', 0) | list | length == 0
+
+    - name: Report all guest and disk cleanup failures
+      ansible.builtin.assert:
+        that:
+          - disk_cleanup.rc == 0
+          - disk_cleanup_retry.rc | default(0) == 0
+          - destroyed_guests.results | selectattr('rc', 'ne', 0) | list | length == 0
+        fail_msg: >-
+          Cleanup failures: initial disk/attachment cleanup rc={{ disk_cleanup.rc }}
+          stderr={{ disk_cleanup.stderr | default('') }};
+          retry volume cleanup rc={{ disk_cleanup_retry.rc | default('skipped') }}
+          stderr={{ disk_cleanup_retry.stderr | default('') }};
+          guest cleanup failures={{ destroyed_guests.results | selectattr('rc', 'ne', 0) | map(attribute='stderr') | list }}
+
+    - name: Remove temporary SSH credentials after successful guest cleanup
+      ansible.builtin.file:
+        path: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/{{ item }}"
+        state: "absent"
+      loop: ["kvm_ed25519", "kvm_ed25519.pub"]
+      when:
+        - disk_cleanup.rc == 0
+        - disk_cleanup_retry.rc == 0
+        - destroyed_guests.results | selectattr('rc', 'ne', 0) | list | length == 0

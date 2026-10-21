@@ -2,7 +2,18 @@
 - name: "Validate ceph blueprint"
   hosts: all
   gather_facts: false
+  vars:
+    ansible_facts:
+      distribution: "Rocky"
+      distribution_major_version: "9"
   tasks:
+    - name: "Declare monitor peers used by validation"
+      ansible.builtin.add_host:
+        name: "{{ item }}"
+        groups: "all"
+      loop: ["ceph-b", "ceph-c"]
+      changed_when: false
+
     - name: "Run accepted validation contract"
       ansible.builtin.include_role:
         name: ansible-iac-role-ceph
@@ -10,8 +21,10 @@
         state: "validate"
         iac_blueprint:
           ceph:
-            cluster_name: "storage"
+            cluster_name: "ceph"
             monitors: ["ceph-validation", "ceph-b", "ceph-c"]
             cluster_network: "10.20.0.0/24"
             osds: []
-            pools: []
+            pools:
+              - name: "validation-pool"
+                pg_num: 16

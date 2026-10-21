@@ -3,17 +3,23 @@ driver:
   name: podman
 platforms:
   - name: ceph-validation
-    image: "quay.io/rockylinux/rockylinux:9"
+    image: "rockylinux:9"
+    registry:
+      url: "quay.io/rockylinux"
     privileged: false
     command: "sleep infinity"
+    pre_build_image: false
 provisioner:
   name: ansible
+  env:
+    ANSIBLE_ROLES_PATH: "${MOLECULE_PROJECT_DIRECTORY}/.."
   inventory:
     host_vars:
       ceph-validation:
-        ansible_connection: local
-        ansible_distribution: Rocky
-        ansible_distribution_major_version: "9"
-        ansible_host: "192.0.2.10"
+        ansible_connection: containers.podman.podman
+        ansible_facts:
+          distribution: Rocky
+          distribution_major_version: "9"
+        ansible_host: "ceph-validation"
 verifier:
   name: ansible

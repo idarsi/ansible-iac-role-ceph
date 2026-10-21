@@ -1,0 +1,113 @@
+---
+- name: Verify shared OSD volume pool remains active
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    molecule_config: "{{ lookup('file', lookup('env', 'MOLECULE_FILE')) | from_yaml }}"
+    disk_suffix: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') | hash('sha256') | truncate(8, true, '') }}"
+    osd_volume_pool: "{{ lookup('env', 'IDARSI_CEPH_OSD_VOLUME_POOL') | default('idarsi-test-bases', true) }}"
+  tasks:
+    - name: Validate OSD volume pool name
+      ansible.builtin.assert:
+        that:
+          - osd_volume_pool is string
+          - osd_volume_pool | length > 0
+          - osd_volume_pool is match('^[A-Za-z0-9_.-]+$')
+        fail_msg: "IDARSI_CEPH_OSD_VOLUME_POOL must be a non-empty libvirt pool name containing only letters, digits, underscores, dots, or hyphens."
+
+    - name: Require the configured OSD volume pool to be active
+      ansible.builtin.shell: |
+        set -euo pipefail
+        pool_info=$(virsh --connect "$LIBVIRT_URI" pool-info "$OSD_VOLUME_POOL")
+        [[ "$pool_info" =~ State:[[:space:]]+running([[:space:]]|$) ]]
+      args:
+        executable: /bin/bash
+      environment:
+        LIBVIRT_URI: "{{ molecule_config.driver.libvirt_uri | default('qemu:///system') }}"
+        OSD_VOLUME_POOL: "{{ osd_volume_pool }}"
+      changed_when: false
+
+    - name: Require both scenario-owned OSD volumes in the configured pool
+      ansible.builtin.shell: |
+        set -euo pipefail
+        for vm in ceph-b ceph-c; do
+          volume="idarsi-ceph-${DISK_SUFFIX}-${vm}-osd.qcow2"
+          virsh --connect "$LIBVIRT_URI" vol-info --pool "$OSD_VOLUME_POOL" "$volume" >/dev/null
+        done
+      args:
+        executable: /bin/bash
+      environment:
+        LIBVIRT_URI: "{{ molecule_config.driver.libvirt_uri | default('qemu:///system') }}"
+        OSD_VOLUME_POOL: "{{ osd_volume_pool }}"
+        DISK_SUFFIX: "{{ disk_suffix }}"
+      changed_when: false
+
+- name: Verify real Ceph cluster convergence
+  hosts: ceph-a
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Read monitor quorum status
+      ansible.builtin.command:
+        argv: ["cephadm", "shell", "--", "ceph", "quorum_status", "--format", "json"]
+      register: quorum_status
+      changed_when: false
+      retries: 30
+      delay: 10
+      until: quorum_status.rc == 0 and (quorum_status.stdout | from_json).quorum_names | length == 3 and (quorum_status.stdout | from_json).quorum | length == 3
+
+    - name: Assert all three monitors are in quorum
+      ansible.builtin.assert:
+        that:
+          - (quorum_status.stdout | from_json).quorum_names | length == 3
+          - (quorum_status.stdout | from_json).quorum | length == 3
+        fail_msg: "Expected all three monitors in quorum: {{ quorum_status.stdout }}"
+
+    - name: Read manager status
+      ansible.builtin.command:
+        argv: ["cephadm", "shell", "--", "ceph", "mgr", "dump", "--format", "json"]
+      register: mgr_dump
+      changed_when: false
+      retries: 30
+      delay: 10
+      until: mgr_dump.rc == 0 and (mgr_dump.stdout | from_json).active_name is defined and (mgr_dump.stdout | from_json).standbys | length >= 1
+
+    - name: Assert an active and standby manager exist
+      ansible.builtin.assert:
+        that:
+          - (mgr_dump.stdout | from_json).active_name is defined
+          - (mgr_dump.stdout | from_json).standbys | length >= 1
+        fail_msg: "Expected an active manager and at least one standby: {{ mgr_dump.stdout }}"
+
+    - name: Wait for exactly two OSDs to become up and in
+      ansible.builtin.command:
+        argv: ["cephadm", "shell", "--", "ceph", "osd", "stat", "--format", "json"]
+      register: osd_stat
+      changed_when: false
+      retries: 60
+      delay: 10
+      until: osd_stat.rc == 0 and (osd_stat.stdout | from_json).num_up_osds == 2 and (osd_stat.stdout | from_json).num_in_osds == 2
+
+    - name: Verify declared pool exists
+      ansible.builtin.command:
+        argv: ["cephadm", "shell", "--", "ceph", "osd", "pool", "ls", "--format", "json"]
+      register: pools
+      changed_when: false
+      retries: 30
+      delay: 10
+      until: pools.rc == 0 and "molecule-integration" in (pools.stdout | from_json)
+
+    - name: Read cluster health
+      ansible.builtin.command:
+        argv: ["cephadm", "shell", "--", "ceph", "health", "--format", "json"]
+      register: health
+      changed_when: false
+      retries: 60
+      delay: 10
+      until: health.rc == 0 and (health.stdout | from_json).status != "HEALTH_ERR"
+
+    - name: Assert Ceph reports no health error
+      ansible.builtin.assert:
+        that: (health.stdout | from_json).status in ["HEALTH_OK", "HEALTH_WARN"]
+        fail_msg: "Cluster reached HEALTH_ERR: {{ health.stdout }}"

@@ -1,0 +1,41 @@
+---
+- name: Prepare disposable Ceph guests
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Set guest hostname to its inventory name
+      ansible.builtin.hostname:
+        name: "{{ inventory_hostname }}"
+
+    - name: Set inventory hostname mappings for all Ceph guests
+      ansible.builtin.blockinfile:
+        path: /etc/hosts
+        marker: "# {mark} MOLECULE CEPH HOSTS"
+        block: |-
+          {% for guest in groups['all'] | sort %}
+          {{ hostvars[guest]['ansible_host'] }} {{ guest }}
+          {% endfor %}
+
+- name: Bootstrap and converge disposable Ceph cluster
+  hosts: ceph-a
+  become: true
+  gather_facts: true
+  vars:
+    state: "install"
+    iac_blueprint:
+      ceph:
+        cluster_name: "ceph"
+        monitors: ["ceph-a", "ceph-b", "ceph-c"]
+        cluster_network: "192.168.250.0/24"
+        ssh_user: "molecule"
+        allow_osd_provisioning: true
+        osds:
+          - { host: "ceph-b", device: "/dev/vdb" }
+          - { host: "ceph-c", device: "/dev/vdb" }
+        pools:
+          - { name: "molecule-integration", pg_num: 8 }
+  tasks:
+    - name: Run Ceph role integration convergence
+      ansible.builtin.include_role:
+        name: "{{ playbook_dir }}/../.."

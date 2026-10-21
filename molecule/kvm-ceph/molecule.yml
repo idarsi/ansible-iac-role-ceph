@@ -1,0 +1,72 @@
+---
+scenario:
+  name: kvm-ceph
+  test_sequence:
+    - destroy
+    - syntax
+    - create
+    - converge
+    - verify
+    - converge
+    - verify
+    - destroy
+dependency:
+  name: galaxy
+  options:
+    requirements-file: requirements.yml
+
+driver:
+  name: default
+  options:
+    managed: true
+
+ansible:
+  playbooks:
+    create: create.yml
+    destroy: destroy.yml
+
+platforms:
+  - name: ceph-a
+    install_source: "${IDARSI_TEST_KVM_INSTALL_SOURCE}"
+    kickstart: "${IDARSI_TEST_ENVIRONMENT}/examples/molecule-kvm/rocky9-10.ks.tmpl"
+    ipv4_address: "192.168.250.21"
+    network: "idarsi-test"
+    memory_mb: 6144
+    vcpus: 2
+    disk_size_gb: 30
+    install_timeout: 3600
+    ssh_user: molecule
+  - name: ceph-b
+    install_source: "${IDARSI_TEST_KVM_INSTALL_SOURCE}"
+    kickstart: "${IDARSI_TEST_ENVIRONMENT}/examples/molecule-kvm/rocky9-10.ks.tmpl"
+    ipv4_address: "192.168.250.22"
+    network: "idarsi-test"
+    memory_mb: 6144
+    vcpus: 2
+    disk_size_gb: 30
+    install_timeout: 3600
+    ssh_user: molecule
+  - name: ceph-c
+    install_source: "${IDARSI_TEST_KVM_INSTALL_SOURCE}"
+    kickstart: "${IDARSI_TEST_ENVIRONMENT}/examples/molecule-kvm/rocky9-10.ks.tmpl"
+    ipv4_address: "192.168.250.23"
+    network: "idarsi-test"
+    memory_mb: 6144
+    vcpus: 2
+    disk_size_gb: 30
+    install_timeout: 3600
+    ssh_user: molecule
+
+provisioner:
+  name: ansible
+  inventory:
+    host_vars:
+      ceph-a:
+        ansible_host: "192.168.250.21"
+      ceph-b:
+        ansible_host: "192.168.250.22"
+      ceph-c:
+        ansible_host: "192.168.250.23"
+
+verifier:
+  name: ansible

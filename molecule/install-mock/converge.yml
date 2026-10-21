@@ -1,0 +1,536 @@
+---
+- name: "Exercise install against CLI stubs"
+  hosts: all
+  gather_facts: false
+  vars:
+    ansible_service_mgr: "mock"
+    ansible_facts:
+      distribution: "Rocky"
+      distribution_major_version: "10"
+      python:
+        version:
+          major: 3
+          minor: 12
+    ceph_mock_log: "/tmp/ceph-mock-state/ceph-mock.log"
+    ceph_missing_user: >-
+      ceph-missing-{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') | hash('sha1') | truncate(10, true, '') }}
+  environment:
+    PATH: >-
+      /tmp/ceph-mock-state/bin:/usr/local/sbin:/usr/sbin:/usr/local/bin:/usr/bin:/bin
+  tasks:
+    - name: "Reset namespaced mock state"
+      ansible.builtin.shell: |
+        rm -rf /tmp/ceph-mock-state
+        mkdir -p /tmp/ceph-mock-state
+        : > /tmp/ceph-mock-state/hosts
+        : > /tmp/ceph-mock-state/pools
+      changed_when: false
+    - name: "Create temporary stub command directory"
+      ansible.builtin.file:
+        path: "/tmp/ceph-mock-state/bin"
+        state: directory
+        mode: "0755"
+    - name: "Add mock declared peer hosts"
+      ansible.builtin.add_host:
+        name: "{{ item }}"
+        groups: "all"
+        ansible_connection: containers.podman.podman
+        ansible_host: "ceph-install-mock"
+      loop: ["ceph-b", "ceph-c"]
+    - name: "Generate a random mock SSH password hash on the target"
+      ansible.builtin.command:
+        argv:
+          - "python3"
+          - "-c"
+          - >-
+            import crypt, secrets;
+            value = crypt.crypt(secrets.token_urlsafe(32), crypt.mksalt(crypt.METHOD_SHA512));
+            assert value and value.startswith('$6$');
+            print(value)
+      register: ceph_mock_password_hash
+      changed_when: false
+      no_log: true
+      delegate_to: "{{ item }}"
+      loop: ["ceph-install-mock", "ceph-b", "ceph-c"]
+      run_once: true
+    - name: "Create the PAM-valid mock SSH account"
+      ansible.builtin.user:
+        name: "molecule"
+        create_home: true
+        password: "{{ item.stdout }}"
+        update_password: "always"
+      no_log: true
+      delegate_to: "{{ item.item }}"
+      loop: "{{ ceph_mock_password_hash.results }}"
+      run_once: true
+    - name: "Install deterministic sudo CLI stub"
+      ansible.builtin.copy:
+        dest: "/tmp/ceph-mock-state/bin/sudo"
+        owner: "root"
+        group: "root"
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          [ "$#" -eq 2 ] && [ "$1" = "-n" ] && [ "$2" = "true" ] || exit 2
+          [ -f /tmp/ceph-mock-state/sudo-allowed ]
+      delegate_to: "{{ item }}"
+      loop: ["ceph-install-mock", "ceph-b", "ceph-c"]
+      run_once: true
+    - name: "Enable fixture passwordless sudo contract"
+      ansible.builtin.file:
+        path: "/tmp/ceph-mock-state/sudo-allowed"
+        state: "touch"
+        owner: "root"
+        mode: "0600"
+      delegate_to: "{{ item }}"
+      loop: ["ceph-install-mock", "ceph-b", "ceph-c"]
+      run_once: true
+    - name: "Probe mock passwordless sudo as the SSH account"
+      ansible.builtin.command:
+        argv: ["/usr/sbin/runuser", "-u", "molecule", "--", "sudo", "-n", "true"]
+      changed_when: false
+      delegate_to: "{{ item }}"
+      loop: ["ceph-install-mock", "ceph-b", "ceph-c"]
+      run_once: true
+    - name: "Install mock Ceph CLI commands" # noqa: yaml[line-length]
+      ansible.builtin.copy:
+        dest: "{{ item.path }}"
+        mode: "0755"
+        content: "{{ item.content }}"
+      loop:
+        - path: "/tmp/ceph-mock-state/bin/cephadm"
+          content: |
+            #!/bin/sh
+            if [ "${1:-}" = shell ]; then
+              shift
+              [ "${1:-}" = -- ] || { echo "missing cephadm shell separator" >&2; exit 2; }
+              shift
+              [ "${1:-}" = ceph ] || { echo "missing ceph command" >&2; exit 2; }
+              shift
+              printf 'cephadm shell -- ceph %s\n' "$*" >> /tmp/ceph-mock-state/ceph-mock.log
+              exec ceph "$@"
+            fi
+            case "$*" in
+              version) printf 'cephadm version 20.2.4\n' ;;
+              '--image quay.io/ceph/ceph:v20.2.4 bootstrap --mon-ip ceph-install-mock --cluster-network 10.20.0.0/24 --ssh-user molecule')
+                printf 'cephadm %s\n' "$*" >> /tmp/ceph-mock-state/ceph-mock.log
+                grep -qxF ceph-install-mock /tmp/ceph-mock-state/hosts || echo ceph-install-mock >> /tmp/ceph-mock-state/hosts
+                mkdir -p /tmp/ceph-mock-state
+                touch /tmp/ceph-mock-state/ceph.conf
+                mkdir -p /etc/ceph
+                printf 'ssh-ed25519 AAAATEST ceph\n' > /etc/ceph/ceph.pub
+                ;;
+              *) echo "unexpected cephadm arguments: $*" >&2; exit 2 ;;
+            esac
+        - path: "/tmp/ceph-mock-state/bin/ceph"
+          content: |
+            #!/bin/sh
+            # Dispatch on argc and each argv token. The full command is still
+            # logged below; using "$*" here would collapse argument boundaries.
+            printf 'ceph %s\n' "$*" >> /tmp/ceph-mock-state/ceph-mock.log
+            if [ "$#" -eq 5 ] && [ "$1" = orch ] && [ "$2" = host ] && [ "$3" = add ]; then
+              [ "$5" = ceph-install-mock ] || { echo "unexpected host-add address: $5" >&2; exit 2; }
+              case "$4" in
+                ceph-b|ceph-c)
+                  printf 'host-add %s %s\n' "$4" "$5" >> /tmp/ceph-mock-state/ceph-mock.log
+                  grep -qxF "$4" /tmp/ceph-mock-state/hosts || echo "$4" >> /tmp/ceph-mock-state/hosts
+                  exit 0
+                  ;;
+              esac
+            fi
+            case "$#:$1:$2:$3:$4:$5:$6:$7:$8" in
+              '5:orch:host:ls:--format:json:::')
+                [ -f /tmp/ceph-mock-state/hosts ] || : > /tmp/ceph-mock-state/hosts
+                printf '['; separator=; while IFS= read -r host; do printf '%s{"hostname":"%s"}' "$separator" "$host"; separator=,; done < /tmp/ceph-mock-state/hosts; printf ']\n' ;;
+              '8:orch:device:ls:--hostname:ceph-install-mock:--refresh:--format:json')
+                printf 'device-inventory %s\n' "$5" >> /tmp/ceph-mock-state/ceph-mock.log
+                count=$(cat /tmp/ceph-mock-state/device-refresh-count 2>/dev/null || echo 0); count=$((count + 1)); echo "$count" > /tmp/ceph-mock-state/device-refresh-count
+                if [ "$count" -eq 1 ]; then printf '[]\n'; elif [ -f /tmp/ceph-mock-state/device-duplicate-host ]; then printf '[{"name":"ceph-install-mock","addr":"ceph-install-mock","devices":[{"path":"/dev/sdb","available":true,"rejected_reasons":[]}],"labels":[]},{"name":"ceph-install-mock","addr":"ceph-install-mock","devices":[],"labels":[]}]\n'; elif [ -f /tmp/ceph-mock-state/device-rejected ]; then printf '[{"name":"ceph-install-mock","addr":"ceph-install-mock","devices":[{"path":"/dev/sdb","available":true,"rejected_reasons":[]},{"path":"/dev/sdb","available":false,"rejected_reasons":["Has a FileSystem"]}],"labels":[]}]\n'; elif [ "$count" -gt 2 ] && [ -f /tmp/ceph-mock-state/osd-spec ]; then printf '[{"name":"ceph-install-mock","addr":"ceph-install-mock","devices":[{"path":"/dev/sdb","available":false,"rejected_reasons":["Has a FileSystem"]}],"labels":[]}]\n'; else printf '[{"name":"ceph-install-mock","addr":"ceph-install-mock","devices":[{"path":"/dev/sdb","available":true,"rejected_reasons":[]}],"labels":[]}]\n'; fi ;;
+              '3:orch:ls:--export:::::') if [ -f /tmp/ceph-mock-state/export-failure ]; then exit 1; elif [ -f /tmp/ceph-mock-state/export-malformed ]; then printf 'unexpected-scalar\n'; elif [ -f /tmp/ceph-mock-state/export-mismatched-id ]; then printf '%s\n' '---' 'service_type: osd' 'service_id: other-device-service' 'placement:' '  hosts: [ceph-install-mock]' 'spec:' '  data_devices:' '    paths: [/dev/sdb]'; elif [ -f /tmp/ceph-mock-state/export-extra-placement ]; then printf '%s\n' '---' 'service_type: osd' 'service_id: device_9cb199a494bd28d019e3129be0e07cceadb86916ffe7cb9bd334bbe11b6f40f4' 'service_name: osd.device_9cb199a494bd28d019e3129be0e07cceadb86916ffe7cb9bd334bbe11b6f40f4' 'placement:' '  hosts: [ceph-install-mock]' '  host_pattern: ceph-install-mock' 'spec:' '  data_devices:' '    paths: [/dev/sdb]'; elif [ -f /tmp/ceph-mock-state/osd-spec ]; then cat /tmp/ceph-mock-state/osd-spec; else :; fi ;;
+              '4:orch:apply:-i:-::::') printf 'daemon-apply\n' >> /tmp/ceph-mock-state/ceph-mock.log; spec=$(cat); SPEC="$spec" python3 -c 'import json,os,re,sys; x=json.loads(os.environ["SPEC"]); common={"placement":{"hosts":["ceph-install-mock","ceph-b","ceph-c"]}}; kind=x.get("service_type"); valid=(kind in ("mon","mgr") and x==dict(common,service_type=kind)) or (kind=="osd" and re.fullmatch(r"device_[0-9a-f]{64}",x.get("service_id","")) and x=={"service_type":"osd","service_id":x["service_id"],"placement":{"hosts":["ceph-install-mock"]},"spec":{"data_devices":{"paths":["/dev/sdb"]}}}); sys.exit(0 if valid else 2)' || { echo "unexpected service spec: $spec" >&2; exit 2; }; compact=$(printf '%s' "$spec" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin),separators=(",",":")))'); printf 'spec %s\n' "$compact" >> /tmp/ceph-mock-state/ceph-mock.log; SPEC="$compact" python3 -c 'import json,os; x=json.loads(os.environ["SPEC"]); print("---\n"+json.dumps(dict(x,service_name="osd."+x["service_id"],spec=dict(x["spec"],objectstore="bluestore",filter_logic="AND"))) if x["service_type"]=="osd" else "")' > /tmp/ceph-mock-state/new-osd-spec; if grep -q '"service_type":"osd"' /tmp/ceph-mock-state/new-osd-spec; then cp /tmp/ceph-mock-state/new-osd-spec /tmp/ceph-mock-state/osd-spec; fi ;;
+              '5:osd:pool:ls:--format:json:::') [ -f /tmp/ceph-mock-state/pools ] || : > /tmp/ceph-mock-state/pools; awk 'BEGIN {printf "["} {printf "%s\"%s\"", sep, $0; sep=","} END {print "]"}' /tmp/ceph-mock-state/pools ;;
+              '7:osd:pool:get:test-pool:pg_num:--format:json:') printf 'pool-preflight\n' >> /tmp/ceph-mock-state/ceph-mock.log; if [ -f /tmp/ceph-mock-state/pool-conflict ]; then printf '{"pool":"test-pool","pool_id":1,"pg_num":8}\n'; else printf '{"pool":"test-pool","pool_id":1,"pg_num":16}\n'; fi ;;
+              '5:osd:pool:create:test-pool:16:::') grep -qxF test-pool /tmp/ceph-mock-state/pools || echo test-pool >> /tmp/ceph-mock-state/pools ;;
+              *) echo "unexpected ceph arguments (argc=$#): $*" >&2; exit 2 ;;
+            esac
+    - name: "Check pre-existing authorized keys on install target"
+      ansible.builtin.stat:
+        path: "/home/molecule/.ssh/authorized_keys"
+      delegate_to: "ceph-install-mock"
+      register: ceph_preexisting_authorized_keys
+    - name: "Require install target authorized keys to be absent"
+      ansible.builtin.assert:
+        that:
+          - not ceph_preexisting_authorized_keys.stat.exists
+        fail_msg: >-
+          Refusing to run mock install with pre-existing authorized keys.
+    - name: "Apply install twice"
+      ansible.builtin.include_role:
+        name: ansible-iac-role-ceph
+      vars:
+        state: "install"
+        ceph_bootstrap_sentinel: "/tmp/ceph-mock-state/ceph.conf"
+        iac_blueprint:
+          ceph:
+            cluster_name: "ceph"
+            monitors: ["ceph-install-mock", "ceph-b", "ceph-c"]
+            cluster_network: "10.20.0.0/24"
+            ssh_user: "molecule"
+            allow_osd_provisioning: true
+            osds: [{ host: "ceph-install-mock", device: "/dev/sdb" }]
+            pools: [{ name: "test-pool", pg_num: 16 }]
+      loop: [1, 2]
+      loop_control:
+        loop_var: install_pass
+    - name: "Require install to declare SSH key distribution targets"
+      ansible.builtin.assert:
+        that:
+          - iac_ceph_ssh_key_distribution_targets is defined
+        fail_msg: >-
+          The install role did not set
+          iac_ceph_ssh_key_distribution_targets; cannot verify SSH key
+          distribution scope.
+    - name: "Save declared SSH key distribution targets for verification"
+      ansible.builtin.copy:
+        content: "{{ iac_ceph_ssh_key_distribution_targets | to_json }}\n"
+        dest: "/tmp/ceph-mock-state/key-targets.json"
+        mode: "0644"
+    - name: "Save normal install command log"
+      ansible.builtin.copy:
+        src: "{{ ceph_mock_log }}"
+        dest: "/tmp/ceph-mock-state/install.log"
+        remote_src: true
+        mode: "0644"
+    - name: "Switch device inventory to rejected state"
+      ansible.builtin.file:
+        path: "/tmp/ceph-mock-state/device-rejected"
+        state: touch
+        mode: "0644"
+    - name: "Mark existing pool as conflicting"
+      ansible.builtin.file:
+        path: "/tmp/ceph-mock-state/pool-conflict"
+        state: touch
+        mode: "0644"
+    - name: "Reset mock log before conflict check"
+      ansible.builtin.command: "truncate -s 0 {{ ceph_mock_log }}"
+      changed_when: false
+    - name: "Require pool conflict to fail before daemon mutation"
+      block:
+        - name: "Attempt install with conflicting existing pool"
+          ansible.builtin.include_role:
+            name: ansible-iac-role-ceph
+          vars:
+            state: "install"
+            ceph_bootstrap_sentinel: "/tmp/ceph-mock-state/ceph.conf"
+            iac_blueprint:
+              ceph:
+                cluster_name: "ceph"
+                monitors: ["ceph-install-mock", "ceph-b", "ceph-c"]
+                cluster_network: "10.20.0.0/24"
+                pools: [{ name: "test-pool", pg_num: 16 }]
+      rescue:
+        - name: "Assert pool conflict is reported"
+          ansible.builtin.assert:
+            that:
+              - "'Existing pool test-pool' in (ansible_failed_result | string)"
+    - name: "Assert pool conflict occurred before daemon apply"
+      ansible.builtin.command: "cat {{ ceph_mock_log }}"
+      register: conflict_log
+      changed_when: false
+    - name: "Check pool conflict log ordering"
+      ansible.builtin.assert:
+        that:
+          - "'pool-preflight' in conflict_log.stdout_lines"
+          - "'daemon-apply' not in conflict_log.stdout_lines"
+          - "'host-add ceph-b' not in conflict_log.stdout_lines"
+          - "'host-add ceph-c' not in conflict_log.stdout_lines"
+    - name: "Require rejected OSD device preflight to stop provisioning"
+      block:
+        - name: "Clear pool conflict for device inventory check"
+          ansible.builtin.file:
+            path: "/tmp/ceph-mock-state/pool-conflict"
+            state: absent
+        - name: "Clear exported OSD ownership before unowned-device rejection"
+          ansible.builtin.file:
+            path: "/tmp/ceph-mock-state/osd-spec"
+            state: absent
+        - name: "Reset mock log before rejected-device check"
+          ansible.builtin.command: "truncate -s 0 {{ ceph_mock_log }}"
+          changed_when: false
+        - name: "Attempt install with unavailable OSD device"
+          ansible.builtin.include_role:
+            name: ansible-iac-role-ceph
+          vars:
+            state: "install"
+            ceph_bootstrap_sentinel: "/tmp/ceph-mock-state/ceph.conf"
+            iac_blueprint:
+              ceph:
+                cluster_name: "ceph"
+                monitors: ["ceph-install-mock", "ceph-b", "ceph-c"]
+                cluster_network: "10.20.0.0/24"
+                allow_osd_provisioning: true
+                osds: [{ host: "ceph-install-mock", device: "/dev/sdb" }]
+                pools: [{ name: "test-pool", pg_num: 16 }]
+      rescue:
+        - name: "Assert rejected device failure is explicit"
+          ansible.builtin.assert:
+            that:
+              - "'Refusing OSD provisioning' in (ansible_failed_result | string)"
+    - name: "Assert rejected-device check applied no daemon or OSD specs"
+      ansible.builtin.command: "cat {{ ceph_mock_log }}"
+      register: rejected_device_log
+      changed_when: false
+    - name: "Check rejected-device log contains no spec applies"
+      ansible.builtin.assert:
+        that:
+          - "rejected_device_log.stdout_lines | select('match', '^device-inventory') | list | length > 0"
+          - "'daemon-apply' not in rejected_device_log.stdout_lines"
+          - >-
+            rejected_device_log.stdout_lines
+            | select('match', '^spec .*\"service_type\":\"osd\"')
+            | list | length == 0
+    - name: "Require duplicate host records to fail OSD preflight"
+      block:
+        - name: "Clear exported OSD ownership before duplicate-host rejection"
+          ansible.builtin.file:
+            path: "/tmp/ceph-mock-state/osd-spec"
+            state: absent
+        - name: "Switch device inventory to duplicate host records"
+          ansible.builtin.file:
+            path: "/tmp/ceph-mock-state/device-duplicate-host"
+            state: touch
+            mode: "0644"
+        - name: "Reset mock log before duplicate-host check"
+          ansible.builtin.command: "truncate -s 0 {{ ceph_mock_log }}"
+          changed_when: false
+        - name: "Attempt install with duplicate host records"
+          ansible.builtin.include_role:
+            name: ansible-iac-role-ceph
+          vars:
+            state: "install"
+            ceph_bootstrap_sentinel: "/tmp/ceph-mock-state/ceph.conf"
+            iac_blueprint:
+              ceph:
+                cluster_name: "ceph"
+                monitors: ["ceph-install-mock", "ceph-b", "ceph-c"]
+                cluster_network: "10.20.0.0/24"
+                allow_osd_provisioning: true
+                osds: [{ host: "ceph-install-mock", device: "/dev/sdb" }]
+                pools: [{ name: "test-pool", pg_num: 16 }]
+      rescue:
+        - name: "Assert duplicate host failure is explicit"
+          ansible.builtin.assert:
+            that:
+              - "'Refusing OSD provisioning' in (ansible_failed_result | string)"
+    - name: "Assert duplicate-host check applied no daemon or OSD specs"
+      ansible.builtin.command: "cat {{ ceph_mock_log }}"
+      register: duplicate_host_log
+      changed_when: false
+    - name: "Check duplicate-host log contains no spec applies"
+      ansible.builtin.assert:
+        that:
+          - "duplicate_host_log.stdout_lines | select('match', '^device-inventory') | list | length > 0"
+          - "'daemon-apply' not in duplicate_host_log.stdout_lines"
+          - >-
+            duplicate_host_log.stdout_lines
+            | select('match', '^spec .*"service_type":"osd"')
+            | list | length == 0
+    - name: "Require mismatched existing OSD ownership claim to fail before apply"
+      block:
+        - name: "Clear duplicate-host inventory mode and inject mismatched service id"
+          ansible.builtin.shell: |
+            rm -f /tmp/ceph-mock-state/device-duplicate-host
+            : > /tmp/ceph-mock-state/export-mismatched-id
+            : > {{ ceph_mock_log }}
+          changed_when: false
+        - name: "Attempt install with mismatched existing OSD service id"
+          ansible.builtin.include_role:
+            name: ansible-iac-role-ceph
+          vars:
+            state: "install"
+            ceph_bootstrap_sentinel: "/tmp/ceph-mock-state/ceph.conf"
+            iac_blueprint:
+              ceph:
+                cluster_name: "ceph"
+                monitors: ["ceph-install-mock", "ceph-b", "ceph-c"]
+                cluster_network: "10.20.0.0/24"
+                allow_osd_provisioning: true
+                osds: [{ host: "ceph-install-mock", device: "/dev/sdb" }]
+                pools: [{ name: "test-pool", pg_num: 16 }]
+      rescue:
+        - name: "Assert mismatched ownership claim is rejected"
+          ansible.builtin.assert:
+            that:
+              - "'Refusing OSD provisioning' in (ansible_failed_result | string)"
+    - name: "Assert mismatched ownership check applied no daemon or OSD specs"
+      ansible.builtin.command: "cat {{ ceph_mock_log }}"
+      register: mismatched_ownership_log
+      changed_when: false
+    - name: "Check mismatched ownership log contains no applies"
+      ansible.builtin.assert:
+        that:
+          - "'daemon-apply' not in mismatched_ownership_log.stdout_lines"
+          - >-
+            mismatched_ownership_log.stdout_lines
+            | select('match', '^spec .*"service_type":"osd"')
+            | list | length == 0
+    - name: "Clear mismatched ownership injection"
+      ansible.builtin.file:
+        path: "/tmp/ceph-mock-state/export-mismatched-id"
+        state: absent
+    - name: "Require extra OSD placement fields to fail before apply"
+      block:
+        - name: "Inject exported OSD claim with an extra placement field"
+          ansible.builtin.shell: |
+            : > /tmp/ceph-mock-state/export-extra-placement
+            : > {{ ceph_mock_log }}
+          changed_when: false
+        - name: "Attempt install with extra exported placement field"
+          ansible.builtin.include_role:
+            name: ansible-iac-role-ceph
+          vars:
+            state: "install"
+            ceph_bootstrap_sentinel: "/tmp/ceph-mock-state/ceph.conf"
+            iac_blueprint:
+              ceph:
+                cluster_name: "ceph"
+                monitors: ["ceph-install-mock", "ceph-b", "ceph-c"]
+                cluster_network: "10.20.0.0/24"
+                allow_osd_provisioning: true
+                osds: [{ host: "ceph-install-mock", device: "/dev/sdb" }]
+                pools: [{ name: "test-pool", pg_num: 16 }]
+      rescue:
+        - name: "Assert extra placement field is rejected"
+          ansible.builtin.assert:
+            that:
+              - "'Refusing OSD provisioning' in (ansible_failed_result | string)"
+    - name: "Assert extra-placement check applied no service specs"
+      ansible.builtin.command: "cat {{ ceph_mock_log }}"
+      register: extra_placement_log
+      changed_when: false
+    - name: "Check extra-placement rejection occurred before specs"
+      ansible.builtin.assert:
+        that:
+          - "'daemon-apply' not in extra_placement_log.stdout_lines"
+          - >-
+            extra_placement_log.stdout_lines
+            | select('match', '^spec .*\"service_type\":\"osd\"')
+            | list | length == 0
+    - name: "Clear extra placement injection"
+      ansible.builtin.file:
+        path: "/tmp/ceph-mock-state/export-extra-placement"
+        state: absent
+    - name: "Exercise SSH prerequisite rejection before mutation"
+      block:
+        - name: "Remove install sentinel and clear mock activity log"
+          ansible.builtin.shell: |
+            rm -f /tmp/ceph-mock-state/ceph.conf
+            : > /tmp/ceph-mock-state/ceph-mock.log
+          changed_when: false
+        - name: "Run install with a missing SSH account"
+          block:
+            - name: "Assert synthetic missing account is absent"
+              ansible.builtin.command: "getent passwd {{ ceph_missing_user }}"
+              register: ceph_missing_user_lookup
+              changed_when: false
+              failed_when: false
+            - name: "Require synthetic missing account to be absent"
+              ansible.builtin.assert:
+                that:
+                  - ceph_missing_user_lookup.rc == 2
+            - name: "Attempt install with missing SSH account"
+              ansible.builtin.include_role:
+                name: ansible-iac-role-ceph
+              vars:
+                state: "install"
+                ceph_bootstrap_sentinel: "/tmp/ceph-mock-state/ceph.conf"
+                iac_blueprint:
+                  ceph:
+                    cluster_name: "ceph"
+                    monitors: ["ceph-install-mock", "ceph-b", "ceph-c"]
+                    cluster_network: "10.20.0.0/24"
+                    ssh_user: "{{ ceph_missing_user }}"
+            - name: "Fail if missing account is unexpectedly accepted"
+              ansible.builtin.fail:
+                msg: "The role accepted a missing Ceph SSH account."
+          rescue:
+            - name: "Assert missing account rejected by exact preflight task"
+              ansible.builtin.assert:
+                that:
+                  - ansible_failed_task.name == "Require existing non-root Ceph accounts"
+          always:
+            - name: "Assert missing-account rejection preceded all mutation"
+              ansible.builtin.shell: |
+                set -e
+                test ! -e /tmp/ceph-mock-state/ceph.conf
+              changed_when: false
+            - name: "Assert missing-account rejection left log empty"
+              ansible.builtin.shell: |
+                set -e
+                test ! -s /tmp/ceph-mock-state/ceph-mock.log
+              changed_when: false
+            - name: "Assert missing-account rejection did not install an authorized key"
+              ansible.builtin.shell: |
+                set -e
+                test ! -e "/home/{{ ceph_missing_user }}/.ssh/authorized_keys"
+              changed_when: false
+        - name: "Run install with an existing account lacking passwordless sudo"
+          block:
+            - name: "Assert nobody account exists"
+              ansible.builtin.command: "getent passwd nobody"
+              register: ceph_nobody_lookup
+              changed_when: false
+            - name: "Require nobody account lookup to succeed"
+              ansible.builtin.assert:
+                that:
+                  - ceph_nobody_lookup.rc == 0
+            - name: "Remove fixture passwordless sudo marker for negative regression"
+              ansible.builtin.file:
+                path: "/tmp/ceph-mock-state/sudo-allowed"
+                state: "absent"
+            - name: "Probe missing fixture sudo contract as the SSH account"
+              ansible.builtin.command:
+                argv: ["/usr/sbin/runuser", "-u", "molecule", "--", "sudo", "-n", "true"]
+              register: ceph_missing_sudo_probe
+              changed_when: false
+              failed_when: false
+            - name: "Assert missing fixture sudo contract returns nonzero"
+              ansible.builtin.assert:
+                that:
+                  - ceph_missing_sudo_probe.rc != 0
+            - name: "Attempt install without passwordless sudo"
+              ansible.builtin.include_role:
+                name: ansible-iac-role-ceph
+              vars:
+                state: "install"
+                ceph_bootstrap_sentinel: "/tmp/ceph-mock-state/ceph.conf"
+                iac_blueprint:
+                  ceph:
+                    cluster_name: "ceph"
+                    monitors: ["ceph-install-mock", "ceph-b", "ceph-c"]
+                    cluster_network: "10.20.0.0/24"
+                    ssh_user: "nobody"
+            - name: "Fail if missing passwordless sudo is unexpectedly accepted"
+              ansible.builtin.fail:
+                msg: "The role accepted an SSH account without passwordless sudo."
+          rescue:
+            - name: "Assert sudo rejection by exact preflight task"
+              ansible.builtin.assert:
+                that:
+                  - ansible_failed_task.name == "Require passwordless sudo for the non-root Ceph SSH user"
+          always:
+            - name: "Assert sudo rejection preceded all mutation"
+              ansible.builtin.shell: |
+                set -e
+                test ! -e /tmp/ceph-mock-state/ceph.conf
+              changed_when: false
+            - name: "Assert sudo rejection left log empty"
+              ansible.builtin.shell: |
+                set -e
+                test ! -s /tmp/ceph-mock-state/ceph-mock.log
+              changed_when: false
+            - name: "Assert sudo rejection did not install an authorized key"
+              ansible.builtin.shell: |
+                set -e
+                test ! -e /nonexistent/.ssh/authorized_keys
+              changed_when: false

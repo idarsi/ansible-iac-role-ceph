@@ -10,8 +10,10 @@
         state: "validate"
         iac_blueprint:
           ceph:
-            cluster_name: "storage"
+            cluster_name: "ceph"
             monitors: ["ceph-a", "ceph-b", "ceph-c"]
             cluster_network: "10.20.0.0/24"
-            osds: []
+            ssh_user: "root"
+            osds:
+              - { host: "ceph-osd-a", device: "/dev/sdb" }
             pools: []
