@@ -169,6 +169,10 @@
     loop_var: iac_resource
   register: ceph_public_key_distribution
 
+- name: "Record declared Ceph public key distribution targets"
+  ansible.builtin.set_fact:
+    iac_ceph_ssh_key_distribution_targets: "{{ ceph_public_key_distribution.results | map(attribute='iac_resource') | list }}"
+
 - name: "Read existing pools"
   ansible.builtin.command:
     argv: ["cephadm", "shell", "--", "ceph", "osd", "pool", "ls", "--format", "json"]

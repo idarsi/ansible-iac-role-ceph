@@ -25,21 +25,21 @@
           - ceph_mock_log.stdout_lines | select('equalto', 'host-add ceph-b ceph-install-mock') | list | length == 1
           - ceph_mock_log.stdout_lines | select('equalto', 'host-add ceph-c ceph-install-mock') | list | length == 1
     - name: "Read installed authorized key for declared peer user"
-      ansible.builtin.command: "cat /home/molecule/.ssh/authorized_keys"
+      ansible.builtin.slurp:
+        src: "/home/molecule/.ssh/authorized_keys"
       delegate_to: "ceph-install-mock"
       register: ceph_authorized_keys
-      changed_when: false
     - name: "Assert only the expected public key was installed"
       ansible.builtin.assert:
         that:
-          - ceph_authorized_keys.stdout_lines == ['ssh-ed25519 AAAATEST ceph']
+          - "'ssh-ed25519 AAAATEST ceph' in (ceph_authorized_keys.content | b64decode).splitlines()"
     - name: "Assert public key was distributed only to declared peers"
       ansible.builtin.assert:
         that:
           - >-
-            hostvars['ceph-install-mock'].ceph_public_key_distribution.results
-            | map(attribute='iac_resource') | list
+            hostvars['ceph-install-mock'].iac_ceph_ssh_key_distribution_targets
             == ['ceph-install-mock', 'ceph-b', 'ceph-c']
+          - "'ceph-undeclared' not in hostvars['ceph-install-mock'].iac_ceph_ssh_key_distribution_targets"
     - name: "Read final mocked host registration state"
       ansible.builtin.command: "cat /tmp/ceph-mock-state/hosts"
       register: ceph_mock_hosts
