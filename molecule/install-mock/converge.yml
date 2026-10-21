@@ -250,7 +250,7 @@
                   - ansible_failed_task.name == "Require existing non-root Ceph accounts"
                   - >-
                     ansible_failed_result.msg is
-                    search("Ceph SSH user 'ceph-missing-[0-9a-f]{10}' must already exist on declared host '(ceph-install-mock|ceph-b|ceph-c)'; this role will not create accounts\\.")
+                    search("Ceph SSH user 'ceph-missing-[0-9a-f]{10}' must already exist on declared host '(ceph-install-mock|ceph-b|ceph-c)'; this role will not create accounts")
           always:
             - name: "Assert missing-account rejection preceded all mutation"
               ansible.builtin.shell: |
