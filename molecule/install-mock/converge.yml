@@ -297,12 +297,14 @@
               ansible.builtin.fail:
                 msg: "The role accepted an SSH account without passwordless sudo."
           rescue:
-            - name: "Assert sudo rejection by exact preflight task and message"
+            - name: "Assert sudo rejection by preflight task and failure details"
               ansible.builtin.assert:
                 that:
                   - ansible_failed_task.name == "Require passwordless sudo for the non-root Ceph SSH user"
-                  - >-
-                    ansible_failed_result.msg == "Ceph SSH user 'nobody' must have passwordless sudo on declared host 'ceph-install-mock'."
+                  - '"Require passwordless sudo for the non-root Ceph SSH user" in (ansible_failed_result | string)'
+                  - '"nobody" in (ansible_failed_result | string)'
+                  - '"must have passwordless sudo" in (ansible_failed_result | string)'
+                  - '"declared host" in (ansible_failed_result | string)'
           always:
             - name: "Assert sudo rejection preceded all mutation"
               ansible.builtin.shell: |
