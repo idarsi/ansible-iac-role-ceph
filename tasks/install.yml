@@ -267,12 +267,14 @@
     that:
       - >-
         (ceph_osd_device_inventory.stdout | from_json
-         | selectattr('hostname', 'equalto', iac_resource.host)
+         | selectattr('name', 'equalto', iac_resource.host)
+         | map(attribute='devices') | flatten
          | selectattr('path', 'equalto', iac_resource.device)
          | list | length) == 1
       - >-
         (ceph_osd_device_inventory.stdout | from_json
-         | selectattr('hostname', 'equalto', iac_resource.host)
+         | selectattr('name', 'equalto', iac_resource.host)
+         | map(attribute='devices') | flatten
          | selectattr('path', 'equalto', iac_resource.device)
          | selectattr('available', 'equalto', true)
          | selectattr('rejected_reasons', 'equalto', []) | list | length) == 1
