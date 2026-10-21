@@ -1,0 +1,81 @@
+###############################################################################
+# VALIDATING OSD DEVICE OWNERSHIP
+###############################################################################
+
+- name: "Collect OSD service specifications claiming the requested device"
+  ansible.builtin.set_fact:
+    ceph_osd_device_claims: >-
+      {{ ceph_exported_service_specs
+         | selectattr('service_type', 'defined')
+         | selectattr('service_type', 'equalto', 'osd')
+         | selectattr('placement.hosts', 'defined')
+         | selectattr('placement.hosts', 'contains', iac_resource.iac_resource.host)
+         | selectattr('spec.data_devices.paths', 'defined')
+         | selectattr('spec.data_devices.paths', 'contains', iac_resource.iac_resource.device)
+         | list }}
+    ceph_osd_id_claims: >-
+      {{ ceph_exported_service_specs
+         | selectattr('service_type', 'defined')
+         | selectattr('service_type', 'equalto', 'osd')
+         | selectattr('service_id', 'equalto', iac_ceph_osd_service_id)
+         | list }}
+    ceph_osd_inventory_hosts: >-
+      {{ iac_resource.stdout | default('[]', true) | from_json
+         | selectattr('name', 'equalto', iac_resource.iac_resource.host)
+         | list }}
+
+- name: "Require declared OSD device to be available or role-owned"
+  ansible.builtin.assert:
+    that:
+      - not (iac_resource.skipped | default(false))
+      - iac_resource.rc | default(1) == 0
+      - iac_resource.stdout is defined
+      - ceph_osd_device_claims | length <= 1
+      - ceph_osd_id_claims | length <= 1
+      - ceph_osd_inventory_hosts | length == 1
+      - >-
+        (ceph_osd_inventory_hosts | map(attribute='devices') | flatten
+         | selectattr('path', 'equalto', iac_resource.iac_resource.device)
+         | list | length) == 1
+      - >-
+        ceph_osd_device_claims | length == 0 or
+        (ceph_osd_device_claims | first).service_id == iac_ceph_osd_service_id
+      - >-
+        ceph_osd_id_claims | length == 0 or
+        (ceph_osd_id_claims | first).placement.hosts == [iac_resource.iac_resource.host]
+      - >-
+        ceph_osd_id_claims | length == 0 or
+        (ceph_osd_id_claims | first).get('service_name', 'osd.' ~ iac_ceph_osd_service_id)
+        == 'osd.' ~ iac_ceph_osd_service_id
+      - >-
+        ceph_osd_id_claims | length == 0 or
+        (ceph_osd_id_claims | first).spec.data_devices.paths == [iac_resource.iac_resource.device]
+      - >-
+        ceph_osd_id_claims | length == 0 or
+        (ceph_osd_id_claims | first).spec.keys() | difference(['data_devices', 'objectstore', 'filter_logic']) | length == 0
+      - >-
+        ceph_osd_id_claims | length == 0 or
+        (ceph_osd_id_claims | first).spec.data_devices.keys() | difference(['paths']) | length == 0
+      - >-
+        ceph_osd_id_claims | length == 0 or
+        (ceph_osd_id_claims | first).spec.get('objectstore', 'bluestore') == 'bluestore'
+      - >-
+        ceph_osd_id_claims | length == 0 or
+        (ceph_osd_id_claims | first).spec.get('filter_logic', 'AND') == 'AND'
+      - >-
+        ceph_osd_id_claims | length == 0 or
+        (ceph_osd_id_claims | first).get('unmanaged', false) == false
+      - >-
+        ceph_osd_id_claims | length == 0 or
+        (ceph_osd_id_claims | first).get('preview_only', false) == false
+      - >-
+        ceph_osd_device_claims | length == 1 or
+        (ceph_osd_id_claims | length == 0 and
+         (ceph_osd_inventory_hosts | map(attribute='devices') | flatten
+          | selectattr('path', 'equalto', iac_resource.iac_resource.device)
+          | selectattr('available', 'equalto', true)
+          | selectattr('rejected_reasons', 'equalto', []) | list | length) == 1)
+    fail_msg: >-
+      Refusing OSD provisioning for {{ iac_resource.iac_resource.host }}:
+      {{ iac_resource.iac_resource.device }}: device inventory or the exported
+      OSD service specification does not establish unique, exact ownership.
