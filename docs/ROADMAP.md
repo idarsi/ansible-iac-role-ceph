@@ -12,7 +12,7 @@ RC readiness; planned work earns no points.
 | Score area | Maximum | Current | Evidence and gap |
 |---|---:|---:|---|
 | Scope and public contract | 12 | 10 | Blueprint/states and test matrix are documented; general platform support remains unverified. |
-| Functional completeness | 20 | 15 | Rocky 10 KVM verified bootstrap, host registration, monitor/manager quorum/HA, OSDs and pool; failure/recovery, lifecycle removal/upgrade and Rocky 9 live behavior remain unverified. |
+| Functional completeness | 20 | 15 | Rocky 10 KVM verified bootstrap, host registration, monitor quorum and active/standby manager checks, OSDs and pool; sustained HA/failover, failure/recovery, lifecycle removal/upgrade and Rocky 9 live behavior remain unverified. |
 | Validation and safety | 20 | 13 | Input validation, install-mock, device inventory guard, and scoped KVM cleanup have evidence; physical-device safety and check-mode coverage remain limited. |
 | Convergence and recovery | 13 | 8 | Two live convergences and owned-unavailable OSD repeat passed; true changed reporting and failure/recovery behavior remain unverified. |
 | Automated testing and CI | 25 | 20.5 | Validation, install-mock, production lint and example syntax passed; full Rocky 10 KVM eight-action sequence passed. Rocky 9 live test, failure/lifecycle coverage and established shared GitHub CI remain gaps. |
