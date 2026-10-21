@@ -16,7 +16,7 @@
           - ceph_mock_log.stdout_lines | select('equalto', 'cephadm shell -- ceph orch host add ceph-b ceph-install-mock') | list | length == 1
           - ceph_mock_log.stdout_lines | select('equalto', 'cephadm shell -- ceph orch host add ceph-c ceph-install-mock') | list | length == 1
           - ceph_mock_log.stdout_lines | select('equalto', 'cephadm shell -- ceph orch host ls --format json') | list | length == 8
-          - ceph_mock_log.stdout_lines | select('equalto', 'cephadm shell -- ceph orch device ls --format json') | list | length == 2
+          - ceph_mock_log.stdout_lines | select('match', '^device-inventory ceph-install-mock$') | list | length == 3
           - ceph_mock_log.stdout_lines | select('equalto', 'cephadm shell -- ceph orch apply -i -') | list | length == 6
           - ceph_mock_log.stdout_lines | select('equalto', 'spec {"service_type":"mon","placement":{"hosts":["ceph-install-mock","ceph-b","ceph-c"]}}') | list | length == 2
           - ceph_mock_log.stdout_lines | select('equalto', 'spec {"service_type":"mgr","placement":{"hosts":["ceph-install-mock","ceph-b","ceph-c"]}}') | list | length == 2

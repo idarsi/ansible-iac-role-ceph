@@ -249,19 +249,45 @@
   loop_control:
     loop_var: iac_resource
 
-# Host registration is required before ceph orch device ls can report the
-# orchestrator's inventory for newly declared OSD hosts.
-- name: "Read orchestrator OSD device inventory before provisioning"
+# Host registration is required before refreshing inventory for newly declared
+# OSD hosts. Ceph inventory scans are asynchronous and may initially be stale.
+- name: "Refresh orchestrator OSD inventory and wait for each declared device"
   ansible.builtin.command:
-    argv: ["cephadm", "shell", "--", "ceph", "orch", "device", "ls", "--format", "json"]
+    argv:
+      - "cephadm"
+      - "shell"
+      - "--"
+      - "ceph"
+      - "orch"
+      - "device"
+      - "ls"
+      - "--hostname"
+      - "{{ iac_resource.host }}"
+      - "--refresh"
+      - "--format"
+      - "json"
   register: ceph_osd_device_inventory
   changed_when: false
+  failed_when: false
+  retries: 12
+  delay: 5
+  until: >-
+    ceph_osd_device_inventory.rc == 0 and
+    (ceph_osd_device_inventory.stdout | default('[]', true) | from_json
+     | selectattr('name', 'equalto', iac_resource.host)
+     | map(attribute='devices') | flatten
+     | selectattr('path', 'equalto', iac_resource.device)
+     | list | length) > 0
+  loop: "{{ iac_blueprint.ceph.osds | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
   when:
     - iac_blueprint.ceph.osds | default([]) | length > 0
     - iac_blueprint.ceph.allow_osd_provisioning | default(false)
 
-# This is a fail-closed snapshot check only. Inventory can change immediately
-# after it is read (TOCTOU); it is not a guarantee that provisioning is safe.
+# This is a fail-closed snapshot check only. Bootstrap and host registration may
+# already have occurred; inventory can change after refresh (TOCTOU), and this
+# check is not a guarantee that provisioning is safe. No device is auto-zapped.
 - name: "Reject OSD devices not reported available by cephadm snapshot"
   ansible.builtin.assert:
     that:
