@@ -44,10 +44,13 @@
         if ! /usr/bin/getent passwd molecule >/dev/null; then
           /usr/sbin/useradd --create-home molecule
         fi
-        /usr/sbin/usermod --password '!' molecule
+        password_hash=$(openssl rand -base64 48 | openssl passwd -6 -stdin)
+        /usr/sbin/usermod --password "$password_hash" molecule
+        unset password_hash
         printf '%s\n' 'molecule ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/ceph-install-mock
         chmod 0440 /etc/sudoers.d/ceph-install-mock
         /usr/sbin/visudo -cf /etc/sudoers.d/ceph-install-mock
+        runuser -u molecule -- sudo -n true
       changed_when: false
       delegate_to: "{{ item }}"
       loop: ["ceph-install-mock", "ceph-b", "ceph-c"]
@@ -444,6 +447,10 @@
               ansible.builtin.assert:
                 that:
                   - ceph_nobody_lookup.rc == 0
+            - name: "Remove fixture passwordless sudo rule for negative regression"
+              ansible.builtin.file:
+                path: "/etc/sudoers.d/ceph-install-mock"
+                state: "absent"
             - name: "Attempt install without passwordless sudo"
               ansible.builtin.include_role:
                 name: ansible-iac-role-ceph
