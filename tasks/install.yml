@@ -374,12 +374,28 @@
           | map(attribute='devices') | flatten
           | selectattr('path', 'equalto', iac_resource.iac_resource.device) | list | length) == 1)
       - >-
-        ((iac_resource.stdout | default('[]', true) | from_json
+        (((ceph_exported_service_specs
+           | selectattr('service_type', 'defined')
+           | selectattr('service_type', 'equalto', 'osd')
+           | selectattr('placement.hosts', 'defined')
+           | selectattr('placement.hosts', 'contains', iac_resource.iac_resource.host)
+           | selectattr('spec.data_devices.paths', 'defined')
+           | selectattr('spec.data_devices.paths', 'contains', iac_resource.iac_resource.device)
+           | list | length) == 0)
+          and
+          ((ceph_exported_service_specs
+           | selectattr('service_type', 'defined')
+           | selectattr('service_type', 'equalto', 'osd')
+           | selectattr('service_id', 'equalto',
+             ('device_' ~ ((iac_resource.iac_resource.host ~ '|' ~ iac_resource.iac_resource.device) | hash('sha256'))))
+           | list | length) == 0)
+          and
+         ((iac_resource.stdout | default('[]', true) | from_json
           | selectattr('name', 'equalto', iac_resource.iac_resource.host)
           | map(attribute='devices') | flatten
           | selectattr('path', 'equalto', iac_resource.iac_resource.device)
           | selectattr('available', 'equalto', true)
-          | selectattr('rejected_reasons', 'equalto', []) | list | length) == 1)
+          | selectattr('rejected_reasons', 'equalto', []) | list | length) == 1))
         or
          ((ceph_exported_service_specs
            | selectattr('service_type', 'defined')

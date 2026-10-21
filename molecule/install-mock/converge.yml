@@ -289,6 +289,49 @@
             duplicate_host_log.stdout_lines
             | select('match', '^spec .*"service_type":"osd"')
             | list | length == 0
+    - name: "Require mismatched existing OSD ownership claim to fail before apply"
+      block:
+        - name: "Clear duplicate-host inventory mode and inject mismatched service id"
+          ansible.builtin.shell: |
+            rm -f /tmp/ceph-mock-state/device-duplicate-host
+            : > /tmp/ceph-mock-state/export-mismatched-id
+            : > {{ ceph_mock_log }}
+          changed_when: false
+        - name: "Attempt install with mismatched existing OSD service id"
+          ansible.builtin.include_role:
+            name: ansible-iac-role-ceph
+          vars:
+            state: "install"
+            ceph_bootstrap_sentinel: "/tmp/ceph-mock-state/ceph.conf"
+            iac_blueprint:
+              ceph:
+                cluster_name: "ceph"
+                monitors: ["ceph-install-mock", "ceph-b", "ceph-c"]
+                cluster_network: "10.20.0.0/24"
+                allow_osd_provisioning: true
+                osds: [{ host: "ceph-install-mock", device: "/dev/sdb" }]
+                pools: [{ name: "test-pool", pg_num: 16 }]
+      rescue:
+        - name: "Assert mismatched ownership claim is rejected"
+          ansible.builtin.assert:
+            that:
+              - "'Refusing OSD provisioning' in (ansible_failed_result | string)"
+    - name: "Assert mismatched ownership check applied no daemon or OSD specs"
+      ansible.builtin.command: "cat {{ ceph_mock_log }}"
+      register: mismatched_ownership_log
+      changed_when: false
+    - name: "Check mismatched ownership log contains no applies"
+      ansible.builtin.assert:
+        that:
+          - "'daemon-apply' not in mismatched_ownership_log.stdout_lines"
+          - >-
+            mismatched_ownership_log.stdout_lines
+            | select('match', '^spec .*"service_type":"osd"')
+            | list | length == 0
+    - name: "Clear mismatched ownership injection"
+      ansible.builtin.file:
+        path: "/tmp/ceph-mock-state/export-mismatched-id"
+        state: absent
     - name: "Exercise SSH prerequisite rejection before mutation"
       block:
         - name: "Remove install sentinel and clear mock activity log"
