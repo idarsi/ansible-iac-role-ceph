@@ -37,13 +37,6 @@
         ansible_connection: containers.podman.podman
         ansible_host: "ceph-install-mock"
       loop: ["ceph-b", "ceph-c"]
-    - name: "Install sudo required by the mock SSH account probe"
-      ansible.builtin.package:
-        name: "sudo"
-        state: present
-      delegate_to: "{{ item }}"
-      loop: ["ceph-install-mock", "ceph-b", "ceph-c"]
-      run_once: true
     - name: "Generate a random mock SSH password hash on the target"
       ansible.builtin.command:
         argv:
@@ -70,19 +63,25 @@
       delegate_to: "{{ item.item }}"
       loop: "{{ ceph_mock_password_hash.results }}"
       run_once: true
-    - name: "Authorize the mock SSH account for passwordless sudo"
+    - name: "Install deterministic sudo CLI stub"
       ansible.builtin.copy:
-        content: "molecule ALL=(ALL:ALL) NOPASSWD: ALL\n"
-        dest: "/etc/sudoers.d/ceph-install-mock"
+        dest: "/tmp/ceph-mock-state/bin/sudo"
         owner: "root"
         group: "root"
-        mode: "0440"
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          [ "$#" -eq 2 ] && [ "$1" = "-n" ] && [ "$2" = "true" ] || exit 2
+          [ -f /tmp/ceph-mock-state/sudo-allowed ]
       delegate_to: "{{ item }}"
       loop: ["ceph-install-mock", "ceph-b", "ceph-c"]
       run_once: true
-    - name: "Validate mock sudo configuration"
-      ansible.builtin.command: "/usr/sbin/visudo -cf /etc/sudoers.d/ceph-install-mock"
-      changed_when: false
+    - name: "Enable fixture passwordless sudo contract"
+      ansible.builtin.file:
+        path: "/tmp/ceph-mock-state/sudo-allowed"
+        state: "touch"
+        owner: "root"
+        mode: "0600"
       delegate_to: "{{ item }}"
       loop: ["ceph-install-mock", "ceph-b", "ceph-c"]
       run_once: true
@@ -485,10 +484,20 @@
               ansible.builtin.assert:
                 that:
                   - ceph_nobody_lookup.rc == 0
-            - name: "Remove fixture passwordless sudo rule for negative regression"
+            - name: "Remove fixture passwordless sudo marker for negative regression"
               ansible.builtin.file:
-                path: "/etc/sudoers.d/ceph-install-mock"
+                path: "/tmp/ceph-mock-state/sudo-allowed"
                 state: "absent"
+            - name: "Probe missing fixture sudo contract as the SSH account"
+              ansible.builtin.command:
+                argv: ["/usr/sbin/runuser", "-u", "molecule", "--", "sudo", "-n", "true"]
+              register: ceph_missing_sudo_probe
+              changed_when: false
+              failed_when: false
+            - name: "Assert missing fixture sudo contract returns nonzero"
+              ansible.builtin.assert:
+                that:
+                  - ceph_missing_sudo_probe.rc != 0
             - name: "Attempt install without passwordless sudo"
               ansible.builtin.include_role:
                 name: ansible-iac-role-ceph
