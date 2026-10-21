@@ -19,7 +19,8 @@
     - name: Require the configured OSD volume pool to be active
       ansible.builtin.shell: |
         set -euo pipefail
-        virsh --connect "$LIBVIRT_URI" pool-info "$OSD_VOLUME_POOL" | grep -Eq '^State:[[:space:]]+running$'
+        pool_info=$(virsh --connect "$LIBVIRT_URI" pool-info "$OSD_VOLUME_POOL")
+        [[ "$pool_info" =~ State:[[:space:]]+running([[:space:]]|$) ]]
       args:
         executable: /bin/bash
       environment:
