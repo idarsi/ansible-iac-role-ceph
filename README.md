@@ -33,7 +33,7 @@ Supported platforms
 
 | Operating system                  | Supported versions                | Automated test coverage                   |
 |-----------------------------------|-----------------------------------|-------------------------------------------|
-| Rocky Linux                       | 9, 10                             | Rocky 9 validation/install-mock only; Rocky 10 and all live support remain unverified |
+| Rocky Linux                       | 9, 10 (intended; not verified)    | Validation scenario targets Rocky 9; install-mock targets Rocky 10 / Python 3.12 for generic Ansible-controller compatibility only. Neither establishes Rocky platform support; live support remains unverified. |
 
 Supported states
 ----------------

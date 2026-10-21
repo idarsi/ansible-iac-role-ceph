@@ -3,7 +3,7 @@ driver:
   name: podman
 platforms:
   - name: ceph-install-mock
-    image: "quay.io/rockylinux/rockylinux:9"
+    image: "quay.io/rockylinux/rockylinux:10"
     privileged: false
     command: "sleep infinity"
 provisioner:
@@ -16,7 +16,11 @@ provisioner:
         ansible_connection: containers.podman.podman
         ansible_facts:
           distribution: Rocky
-          distribution_major_version: "9"
+          distribution_major_version: "10"
+          python:
+            version:
+              major: 3
+              minor: 12
         ansible_host: "ceph-install-mock"
 dependency:
   name: galaxy

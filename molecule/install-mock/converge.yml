@@ -6,7 +6,11 @@
     ansible_service_mgr: "mock"
     ansible_facts:
       distribution: "Rocky"
-      distribution_major_version: "9"
+      distribution_major_version: "10"
+      python:
+        version:
+          major: 3
+          minor: 12
     ceph_mock_log: "/tmp/ceph-mock-state/ceph-mock.log"
     ceph_missing_user: >-
       ceph-missing-{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') | hash('sha1') | truncate(10, true, '') }}
