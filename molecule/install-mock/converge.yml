@@ -44,8 +44,10 @@
         if ! /usr/bin/getent passwd molecule >/dev/null; then
           /usr/sbin/useradd --create-home molecule
         fi
-        printf 'molecule ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/molecule
-        chmod 0440 /etc/sudoers.d/molecule
+        /usr/sbin/usermod --password '!' molecule
+        printf '%s\n' 'molecule ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/ceph-install-mock
+        chmod 0440 /etc/sudoers.d/ceph-install-mock
+        /usr/sbin/visudo -cf /etc/sudoers.d/ceph-install-mock
       changed_when: false
       delegate_to: "{{ item }}"
       loop: ["ceph-install-mock", "ceph-b", "ceph-c"]
