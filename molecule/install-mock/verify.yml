@@ -33,13 +33,14 @@
       ansible.builtin.assert:
         that:
           - "(ceph_authorized_keys.content | b64decode) == 'ssh-ed25519 AAAATEST ceph\n'"
+    - name: "Read declared SSH key distribution targets"
+      ansible.builtin.slurp:
+        src: "/tmp/ceph-mock-state/key-targets.json"
+      register: ceph_key_targets_artifact
     - name: "Assert public key was distributed only to declared peers"
       ansible.builtin.assert:
         that:
-          - >-
-            hostvars['ceph-install-mock'].iac_ceph_ssh_key_distribution_targets
-            == ['ceph-install-mock', 'ceph-b', 'ceph-c']
-          - "'ceph-undeclared' not in hostvars['ceph-install-mock'].iac_ceph_ssh_key_distribution_targets"
+          - (ceph_key_targets_artifact.content | b64decode | from_json) == ['ceph-install-mock', 'ceph-b', 'ceph-c']
     - name: "Read final mocked host registration state"
       ansible.builtin.command: "cat /tmp/ceph-mock-state/hosts"
       register: ceph_mock_hosts

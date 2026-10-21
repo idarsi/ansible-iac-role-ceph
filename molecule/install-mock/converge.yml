@@ -134,6 +134,19 @@
       loop: [1, 2]
       loop_control:
         loop_var: install_pass
+    - name: "Require install to declare SSH key distribution targets"
+      ansible.builtin.assert:
+        that:
+          - iac_ceph_ssh_key_distribution_targets is defined
+        fail_msg: >-
+          The install role did not set
+          iac_ceph_ssh_key_distribution_targets; cannot verify SSH key
+          distribution scope.
+    - name: "Save declared SSH key distribution targets for verification"
+      ansible.builtin.copy:
+        content: "{{ iac_ceph_ssh_key_distribution_targets | to_json }}\n"
+        dest: "/tmp/ceph-mock-state/key-targets.json"
+        mode: "0644"
     - name: "Save normal install command log"
       ansible.builtin.copy:
         src: "{{ ceph_mock_log }}"
