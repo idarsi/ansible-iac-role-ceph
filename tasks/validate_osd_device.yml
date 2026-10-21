@@ -42,11 +42,13 @@
         (ceph_osd_device_claims | first).service_id == iac_ceph_osd_service_id
       - >-
         ceph_osd_id_claims | length == 0 or
+        (ceph_osd_id_claims | first).placement.keys() | list == ['hosts']
+      - >-
+        ceph_osd_id_claims | length == 0 or
         (ceph_osd_id_claims | first).placement.hosts == [iac_resource.iac_resource.host]
       - >-
         ceph_osd_id_claims | length == 0 or
-        (ceph_osd_id_claims | first).get('service_name', 'osd.' ~ iac_ceph_osd_service_id)
-        == 'osd.' ~ iac_ceph_osd_service_id
+        (ceph_osd_id_claims | first).service_name == 'osd.' ~ iac_ceph_osd_service_id
       - >-
         ceph_osd_id_claims | length == 0 or
         (ceph_osd_id_claims | first).spec.data_devices.paths == [iac_resource.iac_resource.device]
