@@ -13,10 +13,7 @@
     key: "{{ iac_blueprint.ceph.ssh_user }}"
     fail_key: false
   delegate_to: "{{ iac_resource }}"
-  loop: >-
-    {{ (iac_blueprint.ceph.monitors
-        + (iac_blueprint.ceph.osds | default([]) | map(attribute='host') | list))
-       | unique }}
+  loop: "{{ iac_ceph_host_targets }}"
   loop_control:
     loop_var: iac_resource
   when: (iac_blueprint.ceph.ssh_user | default('root')) != 'root'
@@ -43,10 +40,7 @@
   changed_when: false
   failed_when: false
   delegate_to: "{{ iac_resource }}"
-  loop: >-
-    {{ (iac_blueprint.ceph.monitors
-        + (iac_blueprint.ceph.osds | default([]) | map(attribute='host') | list))
-       | unique }}
+  loop: "{{ iac_ceph_host_targets }}"
   loop_control:
     loop_var: iac_resource
   when: (iac_blueprint.ceph.ssh_user | default('root')) != 'root'
@@ -64,13 +58,6 @@
     loop_var: iac_resource
   when: not iac_resource.skipped | default(false)
 
-- name: "Normalize declared Ceph host targets"
-  ansible.builtin.set_fact:
-    iac_ceph_host_targets: >-
-      {{ (iac_blueprint.ceph.monitors
-          + (iac_blueprint.ceph.osds | default([]) | map(attribute='host') | list))
-         | unique }}
-
 - name: "Install Ceph host runtime prerequisites"
   ansible.builtin.package:
     name:
@@ -85,17 +72,27 @@
   loop_control:
     loop_var: iac_resource
 
-- name: "Enable time synchronization on declared Ceph hosts"
-  ansible.builtin.service:
-    name: "chronyd"
-    state: "started"
-    enabled: true
+- name: "Detect systemd on each declared Ceph host"
+  ansible.builtin.stat:
+    path: "/run/systemd/system"
   become: true
   delegate_to: "{{ iac_resource }}"
   loop: "{{ iac_ceph_host_targets }}"
   loop_control:
     loop_var: iac_resource
-  when: ansible_service_mgr | default("") == "systemd"
+  register: ceph_systemd_targets
+
+- name: "Enable time synchronization on declared systemd Ceph hosts"
+  ansible.builtin.service:
+    name: "chronyd"
+    state: "started"
+    enabled: true
+  become: true
+  delegate_to: "{{ iac_resource.iac_resource }}"
+  loop: "{{ ceph_systemd_targets.results }}"
+  loop_control:
+    loop_var: iac_resource
+  when: iac_resource.stat.exists
 
 - name: "Require a cephadm artifact with a pinned checksum"
   ansible.builtin.assert:

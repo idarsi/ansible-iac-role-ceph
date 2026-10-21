@@ -49,6 +49,13 @@
 - name: "Validating ceph inventory"
   ansible.builtin.include_tasks: validate/validate_inventory.yml
 
+- name: "Normalize declared Ceph host targets"
+  ansible.builtin.set_fact:
+    iac_ceph_host_targets: >-
+      {{ (iac_blueprint.ceph.monitors
+          + (iac_blueprint.ceph.osds | default([]) | map(attribute='host') | list))
+         | unique | list }}
+
 - name: "STATE: Validate ceph blueprint"
   ansible.builtin.debug:
     msg: "Ceph blueprint is valid; no host changes were made."
