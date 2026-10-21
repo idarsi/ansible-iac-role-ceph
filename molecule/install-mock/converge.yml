@@ -44,15 +44,31 @@
       delegate_to: "{{ item }}"
       loop: ["ceph-install-mock", "ceph-b", "ceph-c"]
       run_once: true
+    - name: "Generate a random mock SSH password hash on the target"
+      ansible.builtin.command:
+        argv:
+          - "python3"
+          - "-c"
+          - >-
+            import crypt, secrets;
+            value = crypt.crypt(secrets.token_urlsafe(32), crypt.mksalt(crypt.METHOD_SHA512));
+            assert value and value.startswith('$6$');
+            print(value)
+      register: ceph_mock_password_hash
+      changed_when: false
+      no_log: true
+      delegate_to: "{{ item }}"
+      loop: ["ceph-install-mock", "ceph-b", "ceph-c"]
+      run_once: true
     - name: "Create the PAM-valid mock SSH account"
       ansible.builtin.user:
         name: "molecule"
         create_home: true
-        password: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') | password_hash('sha512') }}"
+        password: "{{ item.stdout }}"
         update_password: "always"
       no_log: true
-      delegate_to: "{{ item }}"
-      loop: ["ceph-install-mock", "ceph-b", "ceph-c"]
+      delegate_to: "{{ item.item }}"
+      loop: "{{ ceph_mock_password_hash.results }}"
       run_once: true
     - name: "Authorize the mock SSH account for passwordless sudo"
       ansible.builtin.copy:
