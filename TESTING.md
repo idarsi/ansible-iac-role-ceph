@@ -19,7 +19,7 @@ acceptance/convergence, disk safety, OSD provisioning, HA, or platform support.
 |---|---|---|---|
 | Rocky Linux 9 Podman container | Ansible Core >=2.19 | validation — latest attempt blocked before actions | Accepted and rejected blueprint inputs; validation-only non-mutation |
 | Rocky Linux 9 Podman container | Ansible Core >=2.19 | install-mock — latest attempt blocked before actions | Installed cephadm version check, host prerequisite package task across declared targets (container mock skips chronyd), pool conflict preflight ahead of mutation, accepted and duplicate-ambiguous/rejected OSD inventory, pinned image and repeated install |
-| Rocky Linux 9/10 KVM guests (three-node cluster) | Ceph Tentacle 20.2.4; Ansible Core >=2.19 | kvm-ceph — not run; prerequisites absent | Per-declared-host Podman/LVM2/chrony/python3 prerequisites and chronyd activation before bootstrap/host registration; real bootstrap/host registration, 3 monitors, active manager, two scenario-owned OSD disks, pool, non-ERR health, repeat convergence and scoped cleanup |
+| Rocky Linux 9/10 KVM guests (three-node cluster) | Ceph Tentacle 20.2.4; Ansible Core >=2.19 | kvm-ceph — not run; prerequisites absent | Per-declared-host Podman/LVM2/chrony/python3 prerequisites and chronyd activation before bootstrap/host registration; real bootstrap/host registration, all 3 monitors in quorum, active and standby manager, two scenario-owned OSDs up/in, pool, non-ERR health, repeat convergence and scoped cleanup |
 
 Use the pre-existing shared `idarsi-ansible-test-environments` environment; follow that repository's setup instructions to activate it.
 
