@@ -97,7 +97,7 @@
                 [ -f /tmp/ceph-mock-state/hosts ] || : > /tmp/ceph-mock-state/hosts
                 printf '['; separator=; while IFS= read -r host; do printf '%s{"hostname":"%s"}' "$separator" "$host"; separator=,; done < /tmp/ceph-mock-state/hosts; printf ']\n' ;;
               '8:orch:device:ls:--hostname:ceph-install-mock:--refresh:--format:json')
-                printf 'device-inventory %s\n' "$4" >> /tmp/ceph-mock-state/ceph-mock.log
+                printf 'device-inventory %s\n' "$5" >> /tmp/ceph-mock-state/ceph-mock.log
                 count=$(cat /tmp/ceph-mock-state/device-refresh-count 2>/dev/null || echo 0); count=$((count + 1)); echo "$count" > /tmp/ceph-mock-state/device-refresh-count
                 if [ "$count" -eq 1 ]; then printf '[]\n'; elif [ -f /tmp/ceph-mock-state/device-duplicate-host ]; then printf '[{"name":"ceph-install-mock","addr":"ceph-install-mock","devices":[{"path":"/dev/sdb","available":true,"rejected_reasons":[]}],"labels":[]},{"name":"ceph-install-mock","addr":"ceph-install-mock","devices":[],"labels":[]}]\n'; elif [ -f /tmp/ceph-mock-state/device-rejected ]; then printf '[{"name":"ceph-install-mock","addr":"ceph-install-mock","devices":[{"path":"/dev/sdb","available":true,"rejected_reasons":[]},{"path":"/dev/sdb","available":false,"rejected_reasons":["Has a FileSystem"]}],"labels":[]}]\n'; else printf '[{"name":"ceph-install-mock","addr":"ceph-install-mock","devices":[{"path":"/dev/sdb","available":true,"rejected_reasons":[]}],"labels":[]}]\n'; fi ;;
               '4:orch:apply:-i:-::::') printf 'daemon-apply\n' >> /tmp/ceph-mock-state/ceph-mock.log; spec=$(cat); SPEC="$spec" python3 -c 'import json,os,re,sys; x=json.loads(os.environ["SPEC"]); common={"placement":{"hosts":["ceph-install-mock","ceph-b","ceph-c"]}}; kind=x.get("service_type"); valid=(kind in ("mon","mgr") and x==dict(common,service_type=kind)) or (kind=="osd" and re.fullmatch(r"device_[0-9a-f]{64}",x.get("service_id","")) and x=={"service_type":"osd","service_id":x["service_id"],"placement":{"hosts":["ceph-install-mock"]},"spec":{"data_devices":{"paths":["/dev/sdb"]}}}); sys.exit(0 if valid else 2)' || { echo "unexpected service spec: $spec" >&2; exit 2; }; compact=$(printf '%s' "$spec" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin),separators=(",",":")))'); printf 'spec %s\n' "$compact" >> /tmp/ceph-mock-state/ceph-mock.log ;;
@@ -186,6 +186,17 @@
           ansible.builtin.assert:
             that:
               - "'Existing pool test-pool' in (ansible_failed_result | string)"
+    - name: "Assert pool conflict occurred before daemon apply"
+      ansible.builtin.command: "cat {{ ceph_mock_log }}"
+      register: conflict_log
+      changed_when: false
+    - name: "Check pool conflict log ordering"
+      ansible.builtin.assert:
+        that:
+          - "'pool-preflight' in conflict_log.stdout_lines"
+          - "'daemon-apply' not in conflict_log.stdout_lines"
+          - "'host-add ceph-b' not in conflict_log.stdout_lines"
+          - "'host-add ceph-c' not in conflict_log.stdout_lines"
     - name: "Require rejected OSD device preflight to stop provisioning"
       block:
         - name: "Clear pool conflict for device inventory check"
@@ -214,17 +225,6 @@
           ansible.builtin.assert:
             that:
               - "'Refusing OSD provisioning' in (ansible_failed_result | string)"
-    - name: "Assert pool conflict occurred before daemon apply"
-      ansible.builtin.command: "cat {{ ceph_mock_log }}"
-      register: conflict_log
-      changed_when: false
-    - name: "Check pool conflict log ordering"
-      ansible.builtin.assert:
-        that:
-          - "'pool-preflight' in conflict_log.stdout_lines"
-          - "'daemon-apply' not in conflict_log.stdout_lines"
-          - "'host-add ceph-b' not in conflict_log.stdout_lines"
-          - "'host-add ceph-c' not in conflict_log.stdout_lines"
     - name: "Assert rejected-device check applied no daemon or OSD specs"
       ansible.builtin.command: "cat {{ ceph_mock_log }}"
       register: rejected_device_log
