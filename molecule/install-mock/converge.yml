@@ -105,6 +105,17 @@
               '5:osd:pool:create:test-pool:16::') grep -qxF test-pool /tmp/ceph-mock-state/pools || echo test-pool >> /tmp/ceph-mock-state/pools ;;
               *) echo "unexpected ceph arguments (argc=$#): $*" >&2; exit 2 ;;
             esac
+    - name: "Check pre-existing authorized keys on install target"
+      ansible.builtin.stat:
+        path: "/home/molecule/.ssh/authorized_keys"
+      delegate_to: "ceph-install-mock"
+      register: ceph_preexisting_authorized_keys
+    - name: "Require install target authorized keys to be absent"
+      ansible.builtin.assert:
+        that:
+          - not ceph_preexisting_authorized_keys.stat.exists
+        fail_msg: >-
+          Refusing to run mock install with pre-existing authorized keys.
     - name: "Apply install twice"
       ansible.builtin.include_role:
         name: ansible-iac-role-ceph

@@ -32,7 +32,7 @@
     - name: "Assert only the expected public key was installed"
       ansible.builtin.assert:
         that:
-          - "'ssh-ed25519 AAAATEST ceph' in (ceph_authorized_keys.content | b64decode).splitlines()"
+          - "(ceph_authorized_keys.content | b64decode) == 'ssh-ed25519 AAAATEST ceph\n'"
     - name: "Assert public key was distributed only to declared peers"
       ansible.builtin.assert:
         that:
