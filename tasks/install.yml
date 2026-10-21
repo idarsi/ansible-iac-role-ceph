@@ -256,6 +256,16 @@
     argv: ["cephadm", "shell", "--", "ceph", "orch", "ls", "--export"]
   register: ceph_service_specs_export
   changed_when: false
+  failed_when: false
+  when:
+    - iac_blueprint.ceph.osds | default([]) | length > 0
+    - iac_blueprint.ceph.allow_osd_provisioning | default(false)
+
+- name: "Normalize exported orchestrator service specifications"
+  ansible.builtin.set_fact:
+    ceph_exported_service_specs: >-
+      {{ ceph_service_specs_export.stdout | default('') | from_yaml_all
+         | reject('none') | list }}
   when:
     - iac_blueprint.ceph.osds | default([]) | length > 0
     - iac_blueprint.ceph.allow_osd_provisioning | default(false)
@@ -265,7 +275,8 @@
     that:
       - ceph_service_specs_export.rc == 0
       - ceph_service_specs_export.stdout is defined
-      - ceph_service_specs_export.stdout | from_yaml_all | list is sequence
+      - ceph_exported_service_specs | select('mapping') | list | length == ceph_exported_service_specs | length
+      - ceph_exported_service_specs | selectattr('service_type', 'defined') | list | length == ceph_exported_service_specs | length
     fail_msg: "Cannot safely validate OSD ownership: ceph orch ls --export failed or returned invalid YAML."
   when:
     - iac_blueprint.ceph.osds | default([]) | length > 0
@@ -316,7 +327,39 @@
       - iac_resource.rc | default(1) == 0
       - iac_resource.stdout is defined
       - >-
-        (ceph_service_specs_export.stdout | from_yaml_all | list
+        (ceph_exported_service_specs
+         | selectattr('service_type', 'defined')
+         | selectattr('service_type', 'equalto', 'osd')
+         | selectattr('placement.hosts', 'defined')
+         | selectattr('placement.hosts', 'contains', iac_resource.iac_resource.host)
+         | selectattr('spec.data_devices.paths', 'defined')
+         | selectattr('spec.data_devices.paths', 'contains', iac_resource.iac_resource.device)
+         | list | length) <= 1
+      - >-
+        (ceph_exported_service_specs
+         | selectattr('service_type', 'defined')
+         | selectattr('service_type', 'equalto', 'osd')
+         | selectattr('placement.hosts', 'defined')
+         | selectattr('placement.hosts', 'contains', iac_resource.iac_resource.host)
+         | selectattr('spec.data_devices.paths', 'defined')
+         | selectattr('spec.data_devices.paths', 'contains', iac_resource.iac_resource.device)
+         | list | length == 0)
+        or
+        (ceph_exported_service_specs
+         | selectattr('service_type', 'defined')
+         | selectattr('service_type', 'equalto', 'osd')
+         | selectattr('placement.hosts', 'defined')
+         | selectattr('placement.hosts', 'contains', iac_resource.iac_resource.host)
+         | selectattr('spec.data_devices.paths', 'defined')
+         | selectattr('spec.data_devices.paths', 'contains', iac_resource.iac_resource.device)
+         | list | first == {
+           'service_type': 'osd',
+           'service_id': 'device_' ~ ((iac_resource.iac_resource.host ~ '|' ~ iac_resource.iac_resource.device) | hash('sha256')),
+           'placement': {'hosts': [iac_resource.iac_resource.host]},
+           'spec': {'data_devices': {'paths': [iac_resource.iac_resource.device]}}
+         })
+      - >-
+        (ceph_exported_service_specs
            | selectattr('service_type', 'defined')
            | selectattr('service_type', 'equalto', 'osd')
            | selectattr('service_id', 'equalto',
@@ -338,7 +381,7 @@
           | selectattr('available', 'equalto', true)
           | selectattr('rejected_reasons', 'equalto', []) | list | length) == 1)
         or
-        ((ceph_service_specs_export.stdout | from_yaml_all | list
+         ((ceph_exported_service_specs
            | selectattr('service_type', 'defined')
            | selectattr('service_type', 'equalto', 'osd')
            | selectattr('service_id', 'equalto',
@@ -350,14 +393,14 @@
             'spec': {'data_devices': {'paths': [iac_resource.iac_resource.device]}}
            }))
       - >-
-        ((ceph_service_specs_export.stdout | from_yaml_all | list
+        ((ceph_exported_service_specs
           | selectattr('service_type', 'defined')
           | selectattr('service_type', 'equalto', 'osd')
           | selectattr('service_id', 'equalto',
             ('device_' ~ ((iac_resource.iac_resource.host ~ '|' ~ iac_resource.iac_resource.device) | hash('sha256'))))
           | list | length) == 0)
         or
-        ((ceph_service_specs_export.stdout | from_yaml_all | list
+        ((ceph_exported_service_specs
           | selectattr('service_type', 'defined')
           | selectattr('service_type', 'equalto', 'osd')
           | selectattr('service_id', 'equalto',
