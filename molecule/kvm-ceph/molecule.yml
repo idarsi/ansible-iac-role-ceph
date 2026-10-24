@@ -60,6 +60,7 @@ platforms:
 provisioner:
   env:
     ANSIBLE_FILTER_PLUGINS: "${MOLECULE_PROJECT_DIRECTORY}/filter_plugins"
+    IDARSI_CEPH_KVM_DISPOSABLE: "YES_I_WILL_DESTROY_THESE_VMS_AND_DISKS"
   name: ansible
   inventory:
     host_vars:

@@ -92,11 +92,16 @@ environment and confirming the `idarsi-test-bases` storage pool and shared
 
 ```bash
 export IDARSI_TEST_KVM_INSTALL_SOURCE=/path/to/Rocky-10-x86_64-dvd.iso
-export IDARSI_CEPH_KVM_DISPOSABLE=YES_I_WILL_DESTROY_THESE_VMS_AND_DISKS
 molecule test -s kvm-ceph
+# Optional: run every scenario (kvm-ceph remains destructive)
+molecule test --all
 ```
 
-The exact acknowledgment is required by both create and destroy. Before
+No manual disposable acknowledgment export is needed: the `kvm-ceph` scenario
+sets its exact disposal acknowledgment in the provisioner environment. This
+applies to both `molecule test -s kvm-ceph` and `molecule test --all`. The
+scenario automatically destroys only its named VMs, OSD disks, and temporary
+SSH keys; it preserves the base images, storage pool, and network. Before
 bootstrap or host registration, the role installs Podman, LVM2, chrony, and
 Python 3 on every unique declared monitor/OSD host, then enables/starts chronyd
 on systemd hosts. Undeclared inventory hosts are not targeted. The scenario
