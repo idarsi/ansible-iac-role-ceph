@@ -159,9 +159,10 @@
         (cephfs_status.stdout | ceph_mds_is_active('molecule-cephfs'))
 
     - name: Read only the CephFS client capabilities for verification
-      ansible.builtin.shell: >-
-        cephadm shell -- ceph auth get client.{{ expected_cephfs_client_ids[inventory_hostname] }} --format json
-        | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)[0].get("caps", {})))'
+      ansible.builtin.shell: |
+        set -o pipefail
+        cephadm shell -- ceph auth get client.{{ expected_cephfs_client_ids[inventory_hostname] }} --format json \
+          | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)[0].get("caps", {})))'
       args:
         executable: /bin/bash
       delegate_to: ceph-a

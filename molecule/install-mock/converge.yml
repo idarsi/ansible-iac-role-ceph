@@ -242,6 +242,7 @@
       ansible.builtin.file:
         path: "/tmp/ceph-mock-state/outside"
         state: "directory"
+        mode: "0755"
       delegate_to: "ceph-install-mock"
     - name: "Create CephFS mountpoint symlink fixture"
       ansible.builtin.file:
