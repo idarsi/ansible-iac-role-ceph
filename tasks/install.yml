@@ -277,6 +277,8 @@
       - ceph_service_specs_export.stdout is defined
       - ceph_exported_service_specs | select('mapping') | list | length == ceph_exported_service_specs | length
       - ceph_exported_service_specs | selectattr('service_type', 'defined') | list | length == ceph_exported_service_specs | length
+      - ceph_exported_service_specs | selectattr('service_id', 'defined') | list | length == ceph_exported_service_specs | length
+      - ceph_exported_service_specs | selectattr('service_id', 'string') | list | length == ceph_exported_service_specs | length
     fail_msg: "Cannot safely validate OSD ownership: ceph orch ls --export failed or returned invalid YAML."
   when:
     - iac_blueprint.ceph.osds | default([]) | length > 0
