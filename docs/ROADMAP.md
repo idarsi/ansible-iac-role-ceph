@@ -2,10 +2,9 @@
 
 ## Current reassessment
 
-This assessment is for the uncommitted current working tree on branch
-`update/cephfs-support`, based on HEAD `8ae3a38`, including the two uncommitted
-MDS identity validation and install-mock changes. This role is
-**Beta / 81% RC Readiness (81.5 before floor)**.
+This assessment is for commit
+`a607c7f63ba2e93761ea94ed03e1025d8bc4fe7d` on branch
+`update/cephfs-support`. This role is **Beta / 81% RC Readiness**.
 The score is an engineering evidence score, not a production-suitability rating.
 The scorecard below records current evidence and the gates required for full
 RC readiness; planned work earns no points.
@@ -18,13 +17,12 @@ RC readiness; planned work earns no points.
 | Convergence and recovery | 13 | 10 | KVM repeat convergence produced zero changes; failure recovery and accurate changed reporting remain unverified. |
 | Automated testing and CI | 25 | 22 | Validation, install-mock (including MDS identity cases), production lint, example syntax, and live KVM evidence exist; lifecycle/failure and Rocky 9 live coverage remain gaps. CI result enforcement at this ref remains unverified. |
 | Documentation and release hygiene | 10 | 7 | README, testing guidance and roadmap updated with accurate evidence and limitations; release and upgrade guidance remain incomplete. |
-| **Total** | **100** | **81.5** | **Beta (81% floor)** |
+| **Total** | **100** | **81** | **Beta** |
 
 ## Evidence at assessed commit
 
-At this assessed working tree on `update/cephfs-support`, based on HEAD
-`8ae3a38`, including the uncommitted MDS identity validation and install-mock
-changes, bootstrap pins to the official Tentacle image
+At assessed commit `a607c7f63ba2e93761ea94ed03e1025d8bc4fe7d` on
+`update/cephfs-support`, bootstrap pins to the official Tentacle image
 `quay.io/ceph/ceph:v20.2.4`, checks orchestrator device inventory before each
 OSD spec, and waits up to 60 seconds for declared hosts to appear in
 `ceph orch host ls`. The mock scenario exercises both accepted and rejected

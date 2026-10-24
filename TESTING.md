@@ -4,10 +4,9 @@ This Beta release has validation and mock-CLI scenarios plus a guarded live
 multi-host KVM integration scenario. Historical validation, install-mock,
 production-profile lint, example syntax, and the then-current KVM sequence passed
 at commit `3706511`; that KVM evidence predates the current CephFS coverage.
-On the uncommitted working tree on `update/cephfs-support`, based on HEAD
-`8ae3a38` with uncommitted MDS identity validation and install-mock changes,
-validation, install-mock, production-profile lint, and example syntax
-passed. The latest Rocky 10 Tentacle 20.2.4 `kvm-ceph` Molecule sequence passed
+At assessed commit `a607c7f63ba2e93761ea94ed03e1025d8bc4fe7d` on
+`update/cephfs-support`, validation, install-mock, production-profile lint, and
+example syntax passed. The latest Rocky 10 Tentacle 20.2.4 `kvm-ceph` Molecule sequence passed
 all eight actions (create, converge/verify twice, cleanup) using shared
 environment HEAD `b6b56db`, Ansible Core 2.20.8, and Molecule 26.8.0. The live
 run verified three OSDs, an active MDS, `ceph-common`/`mount.ceph`, persistent
@@ -24,9 +23,9 @@ acceptance/convergence, disk safety, OSD provisioning, HA, or platform support.
 
 | Platform/image | Ansible or application versions | Molecule scenarios | Main coverage |
 |---|---|---|---|
-| Rocky Linux 9 Podman container | Ansible Core >=2.19 | validation — passed at 3706511 historically; current working-tree validation passed | Accepted and rejected blueprint inputs; validation-only non-mutation. Container validation is not Rocky 9 live-platform evidence. |
-| Rocky Linux 10 / Python 3.12 Podman container | Ansible Core >=2.19 | install-mock — passed at 3706511 historically; current working-tree install-mock passed | Installed cephadm version check, prerequisite package task (container mock skips chronyd), pool conflict preflight, accepted/rejected OSD inventory, duplicate/count and identity cases, pinned image and repeated mocked install; not platform support evidence. |
-| Rocky Linux 10 KVM guests (three-node cluster) | Ceph Tentacle 20.2.4; Ansible Core 2.20.8; Molecule 26.8.0 | kvm-ceph — full eight-action CephFS sequence passed on current working tree | Three monitors, active and standby manager, three scenario-owned OSDs up/in, pool (`pg_num: 32`, matching the autoscaler-adjusted value observed by KVM diagnostics), non-error health, CephFS with active MDS, `ceph-common` and `mount.ceph` on all three clients, persistent mounts on all nodes, cross-node write/read, second convergence with `changed=0`, and scoped cleanup. |
+| Rocky Linux 9 Podman container | Ansible Core >=2.19 | validation — passed at 3706511 historically; passed at assessed commit `a607c7f` | Accepted and rejected blueprint inputs; validation-only non-mutation. Container validation is not Rocky 9 live-platform evidence. |
+| Rocky Linux 10 / Python 3.12 Podman container | Ansible Core >=2.19 | install-mock — passed at 3706511 historically; passed at assessed commit `a607c7f` | Installed cephadm version check, prerequisite package task (container mock skips chronyd), pool conflict preflight, accepted/rejected OSD inventory, duplicate/count and identity cases, pinned image and repeated mocked install; not platform support evidence. |
+| Rocky Linux 10 KVM guests (three-node cluster) | Ceph Tentacle 20.2.4; Ansible Core 2.20.8; Molecule 26.8.0 | kvm-ceph — full eight-action CephFS sequence passed at assessed commit `a607c7f` | Three monitors, active and standby manager, three scenario-owned OSDs up/in, pool (`pg_num: 32`, matching the autoscaler-adjusted value observed by KVM diagnostics), non-error health, CephFS with active MDS, `ceph-common` and `mount.ceph` on all three clients, persistent mounts on all nodes, cross-node write/read, second convergence with `changed=0`, and scoped cleanup. |
 
 | Rocky Linux 9 KVM guests (three-node cluster) | Ceph Tentacle 20.2.4; Ansible Core >=2.19 | kvm-ceph — not run | Intended test target only; no live-cluster evidence. |
 
@@ -118,7 +117,7 @@ KVM evidence establishes the tested cluster outcomes and scoped teardown only. I
 The prior Rocky 9 / Python 3.9 install-mock incompatibility was addressed by
 running install-mock on Rocky 10 / Python 3.12. At 3706511, configured
 validation, mock, lint, and syntax checks passed locally; the same focused
-checks passed on the current uncommitted working tree. `.github/workflows/quick.yml`
+checks passed at assessed commit `a607c7f`. `.github/workflows/quick.yml`
 defines PR/push checks, but successful shared GitHub Actions enforcement has
 not been established. Rocky 9 live cluster and Rocky 10 general platform
 compatibility remain unverified; the cephadm executable is sourced from the

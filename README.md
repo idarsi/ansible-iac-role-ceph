@@ -1,6 +1,6 @@
 > **Maturity State: Beta**  
 > **RC Readiness: 81%**  
-> **Assessment ref:** working tree on `update/cephfs-support`, based on HEAD `8ae3a38`, including the uncommitted MDS identity validation and install-mock changes  
+> **Assessment ref:** commit `a607c7f63ba2e93761ea94ed03e1025d8bc4fe7d` on `update/cephfs-support`  
 
 ANSIBLE-IAC-ROLE-CEPH
 ===============================
