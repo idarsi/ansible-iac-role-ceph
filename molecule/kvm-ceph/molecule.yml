@@ -58,6 +58,8 @@ platforms:
     ssh_user: molecule
 
 provisioner:
+  env:
+    ANSIBLE_FILTER_PLUGINS: "${MOLECULE_PROJECT_DIRECTORY}/filter_plugins"
   name: ansible
   inventory:
     host_vars:

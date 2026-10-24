@@ -18,6 +18,76 @@
     PATH: >-
       /tmp/ceph-mock-state/bin:/usr/local/sbin:/usr/sbin:/usr/local/bin:/usr/bin:/bin
   tasks:
+    - name: "Exercise monitor normalization with realistic dump fixtures"
+      ansible.builtin.include_tasks: "../../tasks/normalize_monitor_fixture.yml"
+      loop:
+        - mons:
+            - public_addrs:
+                addrvec:
+                  - { type: "v2", addr: "v2:10.0.0.1:3300", nonce: 0 }
+                  - { type: "v1", addr: "v1:10.0.0.1:6789", nonce: 0 }
+            - public_addrs:
+                addrvec:
+                  - { type: "v2", addr: "v2:10.0.0.2:3300", nonce: 0 }
+                  - { type: "v1", addr: "v1:10.0.0.2:6789", nonce: 0 }
+          expected: ["10.0.0.1:3300", "10.0.0.2:3300"]
+          expected_protocol: "v2"
+          expected_ms_mode: "prefer-secure"
+        - mons:
+            - public_addrs:
+                addrvec:
+                  - { type: "v1", addr: "v1:10.0.0.2:6789/12345", nonce: 12345 }
+          expected: ["10.0.0.2:6789"]
+          expected_protocol: "v1"
+          expected_ms_mode: "legacy"
+        - mons:
+            - public_addrs:
+                addrvec:
+                  - { type: "v2", addr: "v2:[2001:db8::1]:3300", nonce: 0 }
+          expected: ["[2001:db8::1]:3300"]
+          expected_protocol: "v2"
+          expected_ms_mode: "prefer-secure"
+        - mons:
+            - public_addrs:
+                addrvec:
+                  - { type: "v1", addr: "v1:10.0.0.3:1", nonce: 0 }
+          expected: ["10.0.0.3:1"]
+          expected_protocol: "v1"
+          expected_ms_mode: "legacy"
+        - mons:
+            - public_addrs:
+                addrvec:
+                  - { type: "v2", addr: "v2:10.0.0.4:65535", nonce: 0 }
+          expected: ["10.0.0.4:65535"]
+          expected_protocol: "v2"
+          expected_ms_mode: "prefer-secure"
+        - mons:
+            - public_addrs:
+                addrvec:
+                  - { type: "v1", addr: "v1:10.0.0.5:6789", nonce: 0 }
+            - public_addrs:
+                addrvec:
+                  - { type: "v2", addr: "v2:10.0.0.6:3300", nonce: 0 }
+                  - { type: "v1", addr: "v1:10.0.0.6:6789", nonce: 0 }
+          expected: ["10.0.0.6:3300"]
+          expected_protocol: "v2"
+          expected_ms_mode: "prefer-secure"
+      loop_control:
+        loop_var: cephfs_fixture
+    - name: "Reject invalid normalized monitor endpoint fixtures"
+      ansible.builtin.assert:
+        that:
+          - not (item | ceph_monitor_endpoint)
+      loop:
+        - "10.0.0.1:0"
+        - "256.0.0.1:3300"
+        - "999.1.1.1:3300"
+        - "[2001:db8::zz]:3300"
+        - "[2001:db8::1:3300"
+        - "2001:db8::1]:3300"
+        - "10.0.0.1:65536"
+      loop_control:
+        label: "{{ item }}"
     - name: "Reset namespaced mock state"
       ansible.builtin.shell: |
         rm -rf /tmp/ceph-mock-state
@@ -146,8 +216,12 @@
                 printf 'device-inventory %s\n' "$5" >> /tmp/ceph-mock-state/ceph-mock.log
                 count=$(cat /tmp/ceph-mock-state/device-refresh-count 2>/dev/null || echo 0); count=$((count + 1)); echo "$count" > /tmp/ceph-mock-state/device-refresh-count
                 if [ "$count" -eq 1 ]; then printf '[]\n'; elif [ -f /tmp/ceph-mock-state/device-duplicate-host ]; then printf '[{"name":"ceph-install-mock","addr":"ceph-install-mock","devices":[{"path":"/dev/sdb","available":true,"rejected_reasons":[]}],"labels":[]},{"name":"ceph-install-mock","addr":"ceph-install-mock","devices":[],"labels":[]}]\n'; elif [ -f /tmp/ceph-mock-state/device-rejected ]; then printf '[{"name":"ceph-install-mock","addr":"ceph-install-mock","devices":[{"path":"/dev/sdb","available":true,"rejected_reasons":[]},{"path":"/dev/sdb","available":false,"rejected_reasons":["Has a FileSystem"]}],"labels":[]}]\n'; elif [ "$count" -gt 2 ] && [ -f /tmp/ceph-mock-state/osd-spec ]; then printf '[{"name":"ceph-install-mock","addr":"ceph-install-mock","devices":[{"path":"/dev/sdb","available":false,"rejected_reasons":["Has a FileSystem"]}],"labels":[]}]\n'; else printf '[{"name":"ceph-install-mock","addr":"ceph-install-mock","devices":[{"path":"/dev/sdb","available":true,"rejected_reasons":[]}],"labels":[]}]\n'; fi ;;
-              '3:orch:ls:--export:::::') if [ -f /tmp/ceph-mock-state/export-failure ]; then exit 1; elif [ -f /tmp/ceph-mock-state/export-malformed ]; then printf 'unexpected-scalar\n'; elif [ -f /tmp/ceph-mock-state/export-mismatched-id ]; then printf '%s\n' '---' 'service_type: osd' 'service_id: other-device-service' 'placement:' '  hosts: [ceph-install-mock]' 'spec:' '  data_devices:' '    paths: [/dev/sdb]'; elif [ -f /tmp/ceph-mock-state/export-extra-placement ]; then printf '%s\n' '---' 'service_type: osd' 'service_id: device_9cb199a494bd28d019e3129be0e07cceadb86916ffe7cb9bd334bbe11b6f40f4' 'service_name: osd.device_9cb199a494bd28d019e3129be0e07cceadb86916ffe7cb9bd334bbe11b6f40f4' 'placement:' '  hosts: [ceph-install-mock]' '  host_pattern: ceph-install-mock' 'spec:' '  data_devices:' '    paths: [/dev/sdb]'; elif [ -f /tmp/ceph-mock-state/osd-spec ]; then cat /tmp/ceph-mock-state/osd-spec; else :; fi ;;
-              '4:orch:apply:-i:-::::') printf 'daemon-apply\n' >> /tmp/ceph-mock-state/ceph-mock.log; spec=$(cat); SPEC="$spec" python3 -c 'import json,os,re,sys; x=json.loads(os.environ["SPEC"]); common={"placement":{"hosts":["ceph-install-mock","ceph-b","ceph-c"]}}; kind=x.get("service_type"); valid=(kind in ("mon","mgr") and x==dict(common,service_type=kind)) or (kind=="osd" and re.fullmatch(r"device_[0-9a-f]{64}",x.get("service_id","")) and x=={"service_type":"osd","service_id":x["service_id"],"placement":{"hosts":["ceph-install-mock"]},"spec":{"data_devices":{"paths":["/dev/sdb"]}}}); sys.exit(0 if valid else 2)' || { echo "unexpected service spec: $spec" >&2; exit 2; }; compact=$(printf '%s' "$spec" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin),separators=(",",":")))'); printf 'spec %s\n' "$compact" >> /tmp/ceph-mock-state/ceph-mock.log; SPEC="$compact" python3 -c 'import json,os; x=json.loads(os.environ["SPEC"]); print("---\n"+json.dumps(dict(x,service_name="osd."+x["service_id"],spec=dict(x["spec"],objectstore="bluestore",filter_logic="AND"))) if x["service_type"]=="osd" else "")' > /tmp/ceph-mock-state/new-osd-spec; if grep -q '"service_type":"osd"' /tmp/ceph-mock-state/new-osd-spec; then cp /tmp/ceph-mock-state/new-osd-spec /tmp/ceph-mock-state/osd-spec; fi ;;
+              '3:orch:ls:--export:::::') if [ -f /tmp/ceph-mock-state/export-failure ]; then exit 1; elif [ -f /tmp/ceph-mock-state/export-malformed ]; then printf 'unexpected-scalar\n'; elif [ -f /tmp/ceph-mock-state/export-mismatched-id ]; then printf '%s\n' '---' 'service_type: osd' 'service_id: other-device-service' 'placement:' '  hosts: [ceph-install-mock]' 'spec:' '  data_devices:' '    paths: [/dev/sdb]'; elif [ -f /tmp/ceph-mock-state/export-extra-placement ]; then printf '%s\n' '---' 'service_type: osd' 'service_id: device_9cb199a494bd28d019e3129be0e07cceadb86916ffe7cb9bd334bbe11b6f40f4' 'service_name: osd.device_9cb199a494bd28d019e3129be0e07cceadb86916ffe7cb9bd334bbe11b6f40f4' 'placement:' '  hosts: [ceph-install-mock]' '  host_pattern: ceph-install-mock' 'spec:' '  data_devices:' '    paths: [/dev/sdb]'; elif [ -f /tmp/ceph-mock-state/osd-spec ]; then cat /tmp/ceph-mock-state/osd-spec; else :; fi; if [ -f /tmp/ceph-mock-state/mds-missing-id ]; then printf '%s\n' '---' 'service_type: mds' 'placement:' '  count: 2'; elif [ -f /tmp/ceph-mock-state/mds-unrelated ]; then printf '%s\n' '---' 'service_type: mds' 'service_id: unrelated-fs' 'placement:' '  hosts: [ceph-install-mock]' '---' 'service_type: mds' 'service_id: test-fs' 'placement:' '  count: 2'; elif [ -f /tmp/ceph-mock-state/mds-duplicate ]; then printf '%s\n' '---' 'service_type: mds' 'service_id: test-fs' 'placement:' '  count: 2' '---' 'service_type: mds' 'service_id: test-fs' 'placement:' '  count: 2'; elif [ -f /tmp/ceph-mock-state/mds-invalid-count ]; then printf '%s\n' '---' 'service_type: mds' 'service_id: test-fs' 'placement:' '  count: true'; elif [ -f /tmp/ceph-mock-state/mds-spec ]; then cat /tmp/ceph-mock-state/mds-spec; fi ;;
+              '4:orch:apply:-i:-::::') printf 'daemon-apply\n' >> /tmp/ceph-mock-state/ceph-mock.log; spec=$(cat); SPEC="$spec" python3 -c 'import json,os,re,sys; x=json.loads(os.environ["SPEC"]); common={"placement":{"hosts":["ceph-install-mock","ceph-b","ceph-c"]}}; kind=x.get("service_type"); valid=(kind in ("mon","mgr") and x==dict(common,service_type=kind)) or (kind=="mds" and x=={"service_type":"mds","service_id":"test-fs","placement":{"count":2}}) or (kind=="osd" and re.fullmatch(r"device_[0-9a-f]{64}",x.get("service_id","")) and x=={"service_type":"osd","service_id":x["service_id"],"placement":{"hosts":["ceph-install-mock"]},"spec":{"data_devices":{"paths":["/dev/sdb"]}}}); sys.exit(0 if valid else 2)' || { echo "unexpected service spec: $spec" >&2; exit 2; }; compact=$(printf '%s' "$spec" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin),separators=(",",":")))'); printf 'spec %s\n' "$compact" >> /tmp/ceph-mock-state/ceph-mock.log; case "$compact" in *'"service_type":"mds"'*) echo 0 > /tmp/ceph-mock-state/mds-stat-count ;; esac; SPEC="$compact" python3 -c 'import json,os; x=json.loads(os.environ["SPEC"]); print("---\n"+json.dumps(dict(x,service_name="osd."+x["service_id"],spec=dict(x["spec"],objectstore="bluestore",filter_logic="AND"))) if x["service_type"]=="osd" else "")' > /tmp/ceph-mock-state/new-osd-spec; if grep -q '"service_type":"osd"' /tmp/ceph-mock-state/new-osd-spec; then cp /tmp/ceph-mock-state/new-osd-spec /tmp/ceph-mock-state/osd-spec; fi; if printf '%s' "$compact" | grep -q '"service_type":"mds"'; then printf '%s\n' '---' "$compact" > /tmp/ceph-mock-state/mds-spec; fi ;;
+              '5:fs:volume:ls:--format:json:::') if [ -f /tmp/ceph-mock-state/filesystems ]; then printf '[{"name":"test-fs"}]\n'; else printf '[]\n'; fi ;;
+              '4:fs:volume:create:test-fs::::') echo "volume-create $*" >> /tmp/ceph-mock-state/ceph-mock.log; touch /tmp/ceph-mock-state/filesystems ;;
+              '2:mds:stat::::::') count=$(cat /tmp/ceph-mock-state/mds-stat-count 2>/dev/null || echo 0); count=$((count + 1)); echo "$count" > /tmp/ceph-mock-state/mds-stat-count; printf 'ceph mds stat poll %s\n' "$count" >> /tmp/ceph-mock-state/ceph-mock.log; if [ "$count" -eq 1 ]; then printf 'other-fs:1 {0=mds.other.a=up:active}, test-fs:1 {0=mds.test-fs.a=up:creating}\n'; else printf 'other-fs:1 {0=mds.other.a=up:active}, test-fs:1 {0=mds.test-fs.a=up:active}\n'; fi ;;
+              '4:mon:dump:--format:json::::') printf '{"mons":[{"public_addrs":{"addrvec":[{"type":"v2","addr":"10.0.0.1:3300","nonce":0},{"type":"v1","addr":"10.0.0.1:6789","nonce":0}]}}]}\n' ;;
               '5:osd:pool:ls:--format:json:::') [ -f /tmp/ceph-mock-state/pools ] || : > /tmp/ceph-mock-state/pools; awk 'BEGIN {printf "["} {printf "%s\"%s\"", sep, $0; sep=","} END {print "]"}' /tmp/ceph-mock-state/pools ;;
               '7:osd:pool:get:test-pool:pg_num:--format:json:') printf 'pool-preflight\n' >> /tmp/ceph-mock-state/ceph-mock.log; if [ -f /tmp/ceph-mock-state/pool-conflict ]; then printf '{"pool":"test-pool","pool_id":1,"pg_num":8}\n'; else printf '{"pool":"test-pool","pool_id":1,"pg_num":16}\n'; fi ;;
               '5:osd:pool:create:test-pool:16:::') grep -qxF test-pool /tmp/ceph-mock-state/pools || echo test-pool >> /tmp/ceph-mock-state/pools ;;
@@ -164,6 +238,56 @@
           - not ceph_preexisting_authorized_keys.stat.exists
         fail_msg: >-
           Refusing to run mock install with pre-existing authorized keys.
+    - name: "Create CephFS mountpoint symlink target"
+      ansible.builtin.file:
+        path: "/tmp/ceph-mock-state/outside"
+        state: "directory"
+      delegate_to: "ceph-install-mock"
+    - name: "Create CephFS mountpoint symlink fixture"
+      ansible.builtin.file:
+        src: "/tmp/ceph-mock-state/outside"
+        dest: "/mnt/cephfs-guard"
+        state: "link"
+      delegate_to: "ceph-install-mock"
+    - name: "Require symlink mountpoint rejection before any install mutation"
+      block:
+        - name: "Attempt install with symlinked CephFS mountpoint"
+          ansible.builtin.include_role:
+            name: ansible-iac-role-ceph
+          vars:
+            state: "install"
+            ceph_bootstrap_sentinel: "/tmp/ceph-mock-state/ceph.conf"
+            iac_blueprint:
+              ceph:
+                cluster_name: "ceph"
+                monitors: ["ceph-install-mock", "ceph-b", "ceph-c"]
+                cluster_network: "10.20.0.0/24"
+                filesystems: [{ name: "test-fs", mds_count: 2 }]
+                cephfs_clients:
+                  - host: "ceph-install-mock"
+                    filesystem: "test-fs"
+                    mountpoint: "/mnt/cephfs-guard"
+                    client_id: "guard"
+        - name: "Fail if symlinked mountpoint is accepted"
+          ansible.builtin.fail:
+            msg: "The role accepted a symlinked CephFS mountpoint."
+      rescue:
+        - name: "Assert symlink guard is the failure"
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == "Resolve CephFS client mountpoints before mutation"
+      always:
+        - name: "Assert symlink guard precedes bootstrap and Ceph mutations"
+          ansible.builtin.shell: |
+            set -e
+            test ! -e /tmp/ceph-mock-state/ceph.conf
+            test ! -s /tmp/ceph-mock-state/ceph-mock.log
+          changed_when: false
+    - name: "Remove CephFS mountpoint symlink fixture"
+      ansible.builtin.file:
+        path: "/mnt/cephfs-guard"
+        state: "absent"
+      delegate_to: "ceph-install-mock"
     - name: "Apply install twice"
       ansible.builtin.include_role:
         name: ansible-iac-role-ceph
@@ -179,6 +303,7 @@
             allow_osd_provisioning: true
             osds: [{ host: "ceph-install-mock", device: "/dev/sdb" }]
             pools: [{ name: "test-pool", pg_num: 16 }]
+            filesystems: [{ name: "test-fs", mds_count: 2 }]
       loop: [1, 2]
       loop_control:
         loop_var: install_pass
@@ -201,6 +326,255 @@
         dest: "/tmp/ceph-mock-state/install.log"
         remote_src: true
         mode: "0644"
+    - name: "Read normal install mock log"
+      ansible.builtin.command: "cat /tmp/ceph-mock-state/install.log"
+      register: install_mock_log
+      changed_when: false
+    - name: "Verify CephFS create and MDS command/spec contract and repeat idempotence"
+      ansible.builtin.assert:
+        that:
+          - install_mock_log.stdout_lines | select('equalto', 'cephadm shell -- ceph fs volume create test-fs') | list | length == 1
+          - install_mock_log.stdout_lines | select('search', '"service_type":"mds","service_id":"test-fs","placement":{"count":2}') | list | length == 1
+          - install_mock_log.stdout_lines | select('search', '"service_type":"mds"') | list | length == 1
+          - install_mock_log.stdout_lines | select('match', '^ceph mds stat poll 1$') | list | length == 1
+          - install_mock_log.stdout_lines | select('match', '^ceph mds stat poll 2$') | list | length == 1
+          - install_mock_log.stdout_lines | select('match', '^ceph mds stat poll 3$') | list | length == 1
+          - install_mock_log.stdout_lines | select('match', '^ceph mds stat poll ') | list | length == 3
+          - install_mock_log.stdout is not search('ceph mon dump')
+          - >-
+            ('other-fs:1 {0=mds.other.a=up:active}, test-fs:1 {0=mds.test-fs.a=up:creating}'
+            | ceph_mds_is_active('test-fs')) == false
+          - >-
+            ('other-fs:1 {0=mds.other.a=up:active}, test-fs:1 {0=mds.test-fs.a=up:active}'
+            | ceph_mds_is_active('test-fs')) == true
+          - >-
+            ('fsXname:1 {0=mds.fsXname.a=up:active}, fs.name:1 {0=mds.fs.name.a=up:creating}'
+            | ceph_mds_is_active('fs.name')) == false
+          - >-
+            ('fsXname:1 {0=mds.fsXname.a=up:active}, fs.name:1 {0=mds.fs.name.a=up:active}'
+            | ceph_mds_is_active('fs.name')) == true
+          - >-
+            ('target-longer:1 {0=mds.target-longer.a=up:active}'
+            | ceph_mds_is_active('target')) == false
+    - name: "Reset log and readiness state for matching MDS-only export scenario"
+      ansible.builtin.shell: |
+        : > {{ ceph_mock_log }}
+        echo 0 > /tmp/ceph-mock-state/mds-stat-count
+      changed_when: false
+    - name: "Run MDS-only install with an existing matching MDS specification"
+      ansible.builtin.include_role:
+        name: ansible-iac-role-ceph
+      vars:
+        state: "install"
+        ceph_bootstrap_sentinel: "/tmp/ceph-mock-state/ceph.conf"
+        iac_blueprint:
+          ceph:
+            cluster_name: "ceph"
+            monitors: ["ceph-install-mock", "ceph-b", "ceph-c"]
+            cluster_network: "10.20.0.0/24"
+            filesystems: [{ name: "test-fs", mds_count: 2 }]
+    - name: "Read matching MDS-only install log"
+      ansible.builtin.command: "cat {{ ceph_mock_log }}"
+      register: matching_mds_only_log
+      changed_when: false
+    - name: "Assert matching MDS-only export is skipped without OSDs or pools"
+      ansible.builtin.assert:
+        that:
+          - "'cephadm shell -- ceph orch ls --export' in matching_mds_only_log.stdout_lines"
+          - "'ceph osd pool ls --format json' in matching_mds_only_log.stdout_lines"
+          - >-
+            matching_mds_only_log.stdout_lines
+            | select('equalto', 'spec {"service_type":"mds","service_id":"test-fs","placement":{"count":2}}')
+            | list | length == 0
+          - >-
+            matching_mds_only_log.stdout_lines
+            | select('equalto', 'spec {"service_type":"mon","placement":{"hosts":["ceph-install-mock","ceph-b","ceph-c"]}}')
+            | list | length == 1
+          - >-
+            matching_mds_only_log.stdout_lines
+            | select('equalto', 'spec {"service_type":"mgr","placement":{"hosts":["ceph-install-mock","ceph-b","ceph-c"]}}')
+            | list | length == 1
+          - matching_mds_only_log.stdout_lines | select('match', '^device-inventory ') | list | length == 0
+          - matching_mds_only_log.stdout is not search('"service_type":"osd"')
+          - matching_mds_only_log.stdout is not search('"service_type":"mds"')
+          - matching_mds_only_log.stdout is not search('ceph osd pool create')
+          - matching_mds_only_log.stdout is not search('ceph fs volume create')
+          - matching_mds_only_log.stdout_lines | select('match', '^ceph mds stat poll ') | list | length == 2
+    - name: "Reset log before invalid existing MDS count check"
+      ansible.builtin.command: "truncate -s 0 {{ ceph_mock_log }}"
+      changed_when: false
+    - name: "Require invalid existing MDS count to fail before daemon apply"
+      block:
+        - name: "Inject matching MDS export with boolean placement count"
+          ansible.builtin.shell: |
+            : > /tmp/ceph-mock-state/mds-invalid-count
+            : > {{ ceph_mock_log }}
+          changed_when: false
+        - name: "Attempt install with invalid existing MDS count"
+          ansible.builtin.include_role:
+            name: ansible-iac-role-ceph
+          vars:
+            state: "install"
+            ceph_bootstrap_sentinel: "/tmp/ceph-mock-state/ceph.conf"
+            iac_blueprint:
+              ceph:
+                cluster_name: "ceph"
+                monitors: ["ceph-install-mock", "ceph-b", "ceph-c"]
+                cluster_network: "10.20.0.0/24"
+                filesystems: [{ name: "test-fs", mds_count: 2 }]
+      rescue:
+        - name: "Assert invalid MDS count is rejected by preflight"
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == "Reject duplicate or invalid MDS specifications for declared filesystems"
+    - name: "Assert invalid MDS count check applied no service specifications"
+      ansible.builtin.command: "cat {{ ceph_mock_log }}"
+      register: invalid_mds_count_log
+      changed_when: false
+    - name: "Check invalid MDS count rejection occurred before apply"
+      ansible.builtin.assert:
+        that:
+          - "'daemon-apply' not in invalid_mds_count_log.stdout_lines"
+          - "'cephadm shell -- ceph orch apply -i -' not in invalid_mds_count_log.stdout_lines"
+          - "invalid_mds_count_log.stdout is not search('^spec ', multiline=true)"
+          - "invalid_mds_count_log.stdout is not search('ceph osd pool create')"
+          - "invalid_mds_count_log.stdout is not search('ceph fs volume create')"
+    - name: "Clear invalid MDS count fixture"
+      ansible.builtin.file:
+        path: "/tmp/ceph-mock-state/mds-invalid-count"
+        state: "absent"
+    - name: "Require duplicate exported MDS specifications to fail before mutation"
+      block:
+        - name: "Inject duplicate matching MDS specifications"
+          ansible.builtin.shell: |
+            : > /tmp/ceph-mock-state/mds-duplicate
+            : > {{ ceph_mock_log }}
+          changed_when: false
+        - name: "Attempt MDS-only install with duplicate exported specifications"
+          ansible.builtin.include_role:
+            name: ansible-iac-role-ceph
+          vars:
+            state: "install"
+            ceph_bootstrap_sentinel: "/tmp/ceph-mock-state/ceph.conf"
+            iac_blueprint:
+              ceph:
+                cluster_name: "ceph"
+                monitors: ["ceph-install-mock", "ceph-b", "ceph-c"]
+                cluster_network: "10.20.0.0/24"
+                filesystems: [{ name: "test-fs", mds_count: 2 }]
+        - name: "Fail if duplicate MDS specifications are accepted"
+          ansible.builtin.fail:
+            msg: "The role accepted duplicate exported MDS specifications."
+      rescue:
+        - name: "Assert duplicate MDS specifications are rejected by preflight"
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == "Reject duplicate or invalid MDS specifications for declared filesystems"
+    - name: "Read duplicate MDS specification rejection log"
+      ansible.builtin.command: "cat {{ ceph_mock_log }}"
+      register: duplicate_mds_log
+      changed_when: false
+    - name: "Assert duplicate MDS rejection preceded all Ceph mutations"
+      ansible.builtin.assert:
+        that:
+          - "'cephadm shell -- ceph orch ls --export' in duplicate_mds_log.stdout_lines"
+          - "'daemon-apply' not in duplicate_mds_log.stdout_lines"
+          - "'cephadm shell -- ceph orch apply -i -' not in duplicate_mds_log.stdout_lines"
+          - "duplicate_mds_log.stdout is not search('ceph osd pool create')"
+          - "duplicate_mds_log.stdout is not search('ceph fs volume create')"
+    - name: "Clear duplicate MDS specification fixture"
+      ansible.builtin.file:
+        path: "/tmp/ceph-mock-state/mds-duplicate"
+        state: "absent"
+    - name: "Clear duplicate MDS scenario log"
+      ansible.builtin.command: "truncate -s 0 {{ ceph_mock_log }}"
+      changed_when: false
+    - name: "Require matching MDS specification without service id to fail before mutation"
+      block:
+        - name: "Inject matching MDS export without service id"
+          ansible.builtin.shell: |
+            : > /tmp/ceph-mock-state/mds-missing-id
+            : > {{ ceph_mock_log }}
+          changed_when: false
+        - name: "Attempt MDS-only install with missing exported service id"
+          ansible.builtin.include_role:
+            name: ansible-iac-role-ceph
+          vars:
+            state: "install"
+            ceph_bootstrap_sentinel: "/tmp/ceph-mock-state/ceph.conf"
+            iac_blueprint:
+              ceph:
+                cluster_name: "ceph"
+                monitors: ["ceph-install-mock", "ceph-b", "ceph-c"]
+                cluster_network: "10.20.0.0/24"
+                filesystems: [{ name: "test-fs", mds_count: 2 }]
+        - name: "Fail if missing exported MDS service id is accepted"
+          ansible.builtin.fail:
+            msg: "The role accepted an MDS specification without service_id."
+      rescue:
+        - name: "Assert missing MDS service id is rejected by its preflight"
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == "Require exported MDS specifications to have string service IDs"
+    - name: "Read missing MDS service id rejection log"
+      ansible.builtin.command: "cat {{ ceph_mock_log }}"
+      register: missing_mds_id_log
+      changed_when: false
+    - name: "Assert missing MDS service id rejection preceded all mutation"
+      ansible.builtin.assert:
+        that:
+          - "'cephadm shell -- ceph orch ls --export' in missing_mds_id_log.stdout_lines"
+          - "'daemon-apply' not in missing_mds_id_log.stdout_lines"
+          - "'cephadm shell -- ceph orch apply -i -' not in missing_mds_id_log.stdout_lines"
+          - "missing_mds_id_log.stdout is not search('ceph osd pool create')"
+          - "missing_mds_id_log.stdout is not search('ceph fs volume create')"
+    - name: "Clear missing MDS service id fixture"
+      ansible.builtin.file:
+        path: "/tmp/ceph-mock-state/mds-missing-id"
+        state: "absent"
+    - name: "Reset log before unrelated MDS placement acceptance"
+      ansible.builtin.command: "truncate -s 0 {{ ceph_mock_log }}"
+      changed_when: false
+    - name: "Accept unrelated MDS placement alongside matching target count"
+      block:
+        - name: "Inject unrelated MDS placement and matching target count"
+          ansible.builtin.file:
+            path: "/tmp/ceph-mock-state/mds-unrelated"
+            state: "touch"
+            mode: "0644"
+        - name: "Run MDS-only install with unrelated exported MDS placement"
+          ansible.builtin.include_role:
+            name: ansible-iac-role-ceph
+          vars:
+            state: "install"
+            ceph_bootstrap_sentinel: "/tmp/ceph-mock-state/ceph.conf"
+            iac_blueprint:
+              ceph:
+                cluster_name: "ceph"
+                monitors: ["ceph-install-mock", "ceph-b", "ceph-c"]
+                cluster_network: "10.20.0.0/24"
+                filesystems: [{ name: "test-fs", mds_count: 2 }]
+    - name: "Read unrelated MDS placement install log"
+      ansible.builtin.command: "cat {{ ceph_mock_log }}"
+      register: unrelated_mds_log
+      changed_when: false
+    - name: "Assert unrelated MDS placement does not trigger target MDS apply"
+      ansible.builtin.assert:
+        that:
+          - "'cephadm shell -- ceph orch ls --export' in unrelated_mds_log.stdout_lines"
+          - >-
+            unrelated_mds_log.stdout_lines
+            | select('equalto', 'spec {\"service_type\":\"mds\",\"service_id\":\"test-fs\",\"placement\":{\"count\":2}}')
+            | list | length == 0
+          - unrelated_mds_log.stdout is not search('ceph osd pool create')
+          - unrelated_mds_log.stdout is not search('ceph fs volume create')
+    - name: "Clear unrelated MDS placement fixture"
+      ansible.builtin.file:
+        path: "/tmp/ceph-mock-state/mds-unrelated"
+        state: "absent"
+    - name: "Clear unrelated MDS scenario log"
+      ansible.builtin.command: "truncate -s 0 {{ ceph_mock_log }}"
+      changed_when: false
     - name: "Switch device inventory to rejected state"
       ansible.builtin.file:
         path: "/tmp/ceph-mock-state/device-rejected"

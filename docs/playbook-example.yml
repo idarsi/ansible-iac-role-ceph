@@ -17,3 +17,7 @@
             osds:
               - { host: "ceph-osd-a", device: "/dev/sdb" }
             pools: []
+            filesystems:
+              - { name: "media", mds_count: 2 }
+            cephfs_clients:
+              - { host: "ceph-client-a", filesystem: "media", mountpoint: "/srv/media", client_id: "media-client-a" }

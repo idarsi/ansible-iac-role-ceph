@@ -7,6 +7,43 @@
 #
 ###############################################################################
 
+- name: "Gather facts on declared CephFS client hosts"
+  ansible.builtin.setup:
+  delegate_to: "{{ iac_resource }}"
+  delegate_facts: true
+  loop: "{{ iac_blueprint.ceph.cephfs_clients | default([]) | map(attribute='host') | unique | list }}"
+  loop_control:
+    loop_var: iac_resource
+
+- name: "Require supported operating systems on CephFS client hosts"
+  ansible.builtin.assert:
+    that:
+      - >-
+        iac_supported_os
+        | selectattr('name', 'equalto', hostvars[iac_resource].ansible_facts.distribution)
+        | selectattr('versions', 'contains', hostvars[iac_resource].ansible_facts.distribution_major_version)
+        | list | length > 0
+      - hostvars[iac_resource].ansible_facts.distribution == "Rocky"
+      - hostvars[iac_resource].ansible_facts.distribution_major_version in ["9", "10"]
+    fail_msg: >-
+      Unsupported operating system on CephFS client '{{ iac_resource }}':
+      {{ hostvars[iac_resource].ansible_facts.distribution }}
+      {{ hostvars[iac_resource].ansible_facts.distribution_major_version }}.
+  loop: "{{ iac_blueprint.ceph.cephfs_clients | default([]) | map(attribute='host') | unique | list }}"
+  loop_control:
+    loop_var: iac_resource
+
+- name: "Resolve CephFS client mountpoints before mutation"
+  ansible.builtin.command:
+    argv: ["realpath", "-m", "--", "{{ iac_resource.mountpoint }}"]
+  register: cephfs_mountpoint_resolution
+  changed_when: false
+  failed_when: cephfs_mountpoint_resolution.stdout != iac_resource.mountpoint
+  delegate_to: "{{ iac_resource.host }}"
+  loop: "{{ iac_blueprint.ceph.cephfs_clients | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
+
 - name: "Verify declared hosts have the non-root Ceph SSH account"
   ansible.builtin.getent:
     database: "passwd"
@@ -258,8 +295,7 @@
   changed_when: false
   failed_when: false
   when:
-    - iac_blueprint.ceph.osds | default([]) | length > 0
-    - iac_blueprint.ceph.allow_osd_provisioning | default(false)
+    - (iac_blueprint.ceph.osds | default([]) | length > 0 and iac_blueprint.ceph.allow_osd_provisioning | default(false)) or (iac_blueprint.ceph.filesystems | default([]) | length > 0)
 
 - name: "Normalize exported orchestrator service specifications"
   ansible.builtin.set_fact:
@@ -267,8 +303,7 @@
       {{ ceph_service_specs_export.stdout | default('') | from_yaml_all
          | reject('none') | list }}
   when:
-    - iac_blueprint.ceph.osds | default([]) | length > 0
-    - iac_blueprint.ceph.allow_osd_provisioning | default(false)
+    - (iac_blueprint.ceph.osds | default([]) | length > 0 and iac_blueprint.ceph.allow_osd_provisioning | default(false)) or (iac_blueprint.ceph.filesystems | default([]) | length > 0)
 
 - name: "Require exported orchestrator service specifications to be valid"
   ansible.builtin.assert:
@@ -276,11 +311,56 @@
       - ceph_service_specs_export.rc == 0
       - ceph_service_specs_export.stdout is defined
       - ceph_exported_service_specs | select('mapping') | list | length == ceph_exported_service_specs | length
-      - ceph_exported_service_specs | selectattr('service_type', 'defined') | list | length == ceph_exported_service_specs | length
-    fail_msg: "Cannot safely validate OSD ownership: ceph orch ls --export failed or returned invalid YAML."
+      - >-
+        ceph_exported_service_specs
+        | selectattr('service_type', 'defined')
+        | selectattr('service_type', 'string')
+        | list | length == ceph_exported_service_specs | length
+    fail_msg: "Cannot safely validate Ceph service specifications: ceph orch ls --export failed or returned invalid YAML."
   when:
-    - iac_blueprint.ceph.osds | default([]) | length > 0
-    - iac_blueprint.ceph.allow_osd_provisioning | default(false)
+    - (iac_blueprint.ceph.osds | default([]) | length > 0 and iac_blueprint.ceph.allow_osd_provisioning | default(false)) or (iac_blueprint.ceph.filesystems | default([]) | length > 0)
+
+- name: "Require exported MDS specifications to have string service IDs"
+  ansible.builtin.assert:
+    that:
+      - >-
+        ceph_exported_service_specs
+        | selectattr('service_type', 'equalto', 'mds')
+        | selectattr('service_id', 'defined')
+        | selectattr('service_id', 'string')
+        | list | length ==
+        ceph_exported_service_specs
+        | selectattr('service_type', 'equalto', 'mds')
+        | list | length
+    fail_msg: "Cannot safely validate Ceph MDS service specifications: every MDS specification must have a string service_id."
+  when:
+    - (iac_blueprint.ceph.osds | default([]) | length > 0 and iac_blueprint.ceph.allow_osd_provisioning | default(false)) or (iac_blueprint.ceph.filesystems | default([]) | length > 0)
+
+- name: "Reject duplicate or invalid MDS specifications for declared filesystems"
+  ansible.builtin.assert:
+    that:
+      - cephfs_matching_mds_specs | length <= 1
+      - >-
+        cephfs_matching_mds_specs | length != 1 or
+        (cephfs_matching_mds_specs[0].placement is mapping and
+         cephfs_matching_mds_specs[0].placement.count is defined and
+         cephfs_matching_mds_specs[0].placement.count | type_debug == "int" and
+         cephfs_matching_mds_specs[0].placement.count >= 1)
+    fail_msg: >-
+      Cannot safely reconcile MDS service specification for filesystem
+      '{{ iac_resource.name }}': duplicate matches or a single match without a
+      positive integer placement.count were found.
+  loop: "{{ iac_blueprint.ceph.filesystems | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
+    label: "{{ iac_resource.name }}"
+  vars:
+    cephfs_matching_mds_specs: >-
+      {{ ceph_exported_service_specs
+         | selectattr('service_type', 'equalto', 'mds')
+         | selectattr('service_id', 'equalto', iac_resource.name)
+         | list }}
+  when: iac_blueprint.ceph.filesystems | default([]) | length > 0
 
 - name: "Refresh orchestrator OSD inventory and wait for each declared device"
   ansible.builtin.command:
@@ -379,3 +459,301 @@
   register: ceph_pool_create
   changed_when: ceph_pool_create.rc == 0
   when: item.name not in (ceph_pool_list.stdout | from_json)
+
+- name: "Read existing CephFS volumes"
+  ansible.builtin.command:
+    argv: ["cephadm", "shell", "--", "ceph", "fs", "volume", "ls", "--format", "json"]
+  register: cephfs_volume_list
+  changed_when: false
+  when: iac_blueprint.ceph.filesystems | default([]) | length > 0
+
+- name: "Create declared CephFS volumes"
+  ansible.builtin.command:
+    argv:
+      - "cephadm"
+      - "shell"
+      - "--"
+      - "ceph"
+      - "fs"
+      - "volume"
+      - "create"
+      - "{{ iac_resource.name }}"
+  loop: "{{ iac_blueprint.ceph.filesystems | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
+  register: cephfs_create_result
+  changed_when: cephfs_create_result.rc == 0
+  when:
+    - iac_blueprint.ceph.filesystems | default([]) | length > 0
+    - iac_resource.name not in (cephfs_volume_list.stdout | from_json | map(attribute='name') | list)
+
+- name: "Converge CephFS MDS daemon count"
+  ansible.builtin.command:
+    argv: ["cephadm", "shell", "--", "ceph", "orch", "apply", "-i", "-"]
+    stdin: >-
+      {{ {'service_type': 'mds', 'service_id': iac_resource.name,
+          'placement': {'count': iac_resource.mds_count | default(2)}} | to_json }}
+  loop: "{{ iac_blueprint.ceph.filesystems | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
+  changed_when: true
+  vars:
+    cephfs_matching_mds_specs: >-
+      {{ ceph_exported_service_specs
+         | selectattr('service_type', 'equalto', 'mds')
+         | selectattr('service_id', 'equalto', iac_resource.name)
+         | list }}
+  when: >-
+    iac_blueprint.ceph.filesystems | default([]) | length > 0 and
+    (cephfs_matching_mds_specs | length == 0 or
+     cephfs_matching_mds_specs[0].placement.count != (iac_resource.mds_count | default(2)))
+
+- name: "Wait for each declared CephFS filesystem to have an active MDS rank"
+  ansible.builtin.command:
+    argv: ["cephadm", "shell", "--", "ceph", "mds", "stat"]
+  register: cephfs_mds_stat
+  changed_when: false
+  retries: 30
+  delay: 10
+  until: >-
+    cephfs_mds_stat.rc == 0 and
+    (cephfs_mds_stat.stdout | ceph_mds_is_active(iac_resource.name))
+  loop: "{{ iac_blueprint.ceph.filesystems | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
+    label: "{{ iac_resource.name }}"
+  when: iac_blueprint.ceph.filesystems | default([]) | length > 0
+
+- name: "Read configured monitor endpoints for CephFS mounts"
+  ansible.builtin.command:
+    argv: ["cephadm", "shell", "--", "ceph", "mon", "dump", "--format", "json"]
+  register: cephfs_mon_dump
+  changed_when: false
+  when: iac_blueprint.ceph.cephfs_clients | default([]) | length > 0
+
+- name: "Normalize and validate CephFS monitor endpoints"
+  ansible.builtin.include_tasks: normalize_monitor_endpoints.yml
+  when: iac_blueprint.ceph.cephfs_clients | default([]) | length > 0
+
+- name: "Install signed EPEL release package from Rocky Extras on CephFS clients"
+  ansible.builtin.dnf:
+    name: "epel-release"
+    state: "present"
+    enablerepo: "extras"
+    disable_gpg_check: false
+  become: true
+  delegate_to: "{{ iac_resource }}"
+  loop: "{{ iac_blueprint.ceph.cephfs_clients | default([]) | map(attribute='host') | unique | list }}"
+  loop_control:
+    loop_var: iac_resource
+  register: cephfs_epel_release_result
+  retries: 4
+  delay: 15
+  until: cephfs_epel_release_result is succeeded
+
+- name: "Check that Rocky CRB enablement tooling is available on CephFS clients"
+  ansible.builtin.command:
+    argv: ["/bin/sh", "-c", "command -v crb"]
+  changed_when: false
+  failed_when: false
+  become: true
+  delegate_to: "{{ iac_resource }}"
+  loop: "{{ iac_blueprint.ceph.cephfs_clients | default([]) | map(attribute='host') | unique | list }}"
+  loop_control:
+    loop_var: iac_resource
+  register: cephfs_crb_command
+
+- name: "Require Rocky CRB enablement tooling on CephFS clients"
+  ansible.builtin.assert:
+    that:
+      - iac_resource.rc == 0
+    fail_msg: >-
+      Cannot enable Rocky CRB on CephFS client host '{{ iac_resource.iac_resource }}':
+      the 'crb' command is unavailable. Install the Rocky CRB tooling before
+      declaring CephFS clients.
+  loop: "{{ cephfs_crb_command.results | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
+
+- name: "Check Rocky CRB status on CephFS clients"
+  ansible.builtin.command:
+    argv: ["crb", "status"]
+  register: cephfs_crb_status
+  changed_when: false
+  failed_when: false
+  become: true
+  delegate_to: "{{ iac_resource }}"
+  loop: "{{ iac_blueprint.ceph.cephfs_clients | default([]) | map(attribute='host') | unique | list }}"
+  loop_control:
+    loop_var: iac_resource
+
+- name: "Require a known Rocky CRB status on CephFS clients"
+  ansible.builtin.assert:
+    that:
+      - iac_resource.rc == 0
+      - >-
+        (iac_resource.stdout | trim) is match('^CRB(?: repo)? is enabled(?: and named: .+)?$') or
+        (iac_resource.stdout | trim) is match('^CRB(?: repo)? is disabled$')
+    fail_msg: >-
+      Cannot determine Rocky CRB status on CephFS client host '{{ iac_resource.iac_resource }}'.
+      Expected 'crb status' to report a recognized enabled or disabled CRB status;
+      command returned rc={{ iac_resource.rc }} and stdout='{{ iac_resource.stdout | default('') | trim }}'.
+  loop: "{{ cephfs_crb_status.results | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
+
+- name: "Enable Rocky CRB on disabled CephFS clients"
+  ansible.builtin.command:
+    argv: ["crb", "enable"]
+  register: cephfs_crb_enable
+  changed_when: cephfs_crb_enable.rc == 0
+  failed_when: cephfs_crb_enable.rc != 0
+  become: true
+  delegate_to: "{{ iac_resource.iac_resource }}"
+  loop: "{{ cephfs_crb_status.results | default([]) }}"
+  when: >-
+    (iac_resource.stdout | trim) is match('^CRB(?: repo)? is disabled$')
+  loop_control:
+    loop_var: iac_resource
+
+- name: "Configure the pinned Ceph package repository on CephFS clients"
+  ansible.builtin.yum_repository:
+    name: "ceph-tentacle-client"
+    description: "Ceph Tentacle {{ ceph_version }} packages for CephFS clients"
+    baseurl: "https://download.ceph.com/rpm-{{ ceph_version }}/{{ 'el9' if hostvars[iac_resource].ansible_facts.distribution_major_version == '9' else 'el10' }}/$basearch"
+    enabled: true
+    gpgcheck: true
+    gpgkey: "https://download.ceph.com/keys/release.asc"
+    sslverify: true
+  become: true
+  delegate_to: "{{ iac_resource }}"
+  loop: "{{ iac_blueprint.ceph.cephfs_clients | default([]) | map(attribute='host') | unique | list }}"
+  loop_control:
+    loop_var: iac_resource
+
+- name: "Install CephFS client mount prerequisites"
+  ansible.builtin.package:
+    name: "ceph-common"
+    state: "present"
+  register: cephfs_client_package_result
+  retries: 4
+  delay: 15
+  until: cephfs_client_package_result is succeeded
+  become: true
+  delegate_to: "{{ iac_resource.host }}"
+  loop: "{{ iac_blueprint.ceph.cephfs_clients | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
+
+- name: "Ensure CephFS client mountpoints exist"
+  ansible.builtin.file:
+    path: "{{ iac_resource.mountpoint }}"
+    state: "directory"
+    owner: "root"
+    group: "root"
+    mode: "0755"
+  become: true
+  delegate_to: "{{ iac_resource.host }}"
+  loop: "{{ iac_blueprint.ceph.cephfs_clients | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
+
+- name: "Build and validate CephFS mount source"
+  ansible.builtin.assert:
+    that:
+      - (iac_resource.client_id ~ '@.' ~ iac_resource.filesystem ~ '=/') is match('^[A-Za-z0-9_.-]+@\\.[A-Za-z0-9_.-]+=/$')
+      - cephfs_monitor_endpoints | length > 0
+    fail_msg: "Generated CephFS kernel mount source or monitor address list is invalid."
+  loop: "{{ iac_blueprint.ceph.cephfs_clients | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
+
+- name: "Create least-privilege CephFS client credentials"
+  ansible.builtin.command:
+    argv:
+      - "cephadm"
+      - "shell"
+      - "--"
+      - "ceph"
+      - "auth"
+      - "get-or-create"
+      - "client.{{ iac_resource.client_id }}"
+      - "mon"
+      - "allow r"
+      - "mds"
+      - "allow rw fsname={{ iac_resource.filesystem }}"
+      - "osd"
+      - "allow rw tag cephfs data={{ iac_resource.filesystem }}"
+  register: cephfs_client_auth
+  changed_when: false
+  no_log: true
+  loop: "{{ iac_blueprint.ceph.cephfs_clients | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
+
+- name: "Reconcile exact least-privilege CephFS client capabilities"
+  ansible.builtin.command:
+    argv:
+      - "cephadm"
+      - "shell"
+      - "--"
+      - "ceph"
+      - "auth"
+      - "caps"
+      - "client.{{ iac_resource.client_id }}"
+      - "mon"
+      - "allow r"
+      - "mds"
+      - "allow rw fsname={{ iac_resource.filesystem }}"
+      - "osd"
+      - "allow rw tag cephfs data={{ iac_resource.filesystem }}"
+  changed_when: false
+  no_log: true
+  loop: "{{ iac_blueprint.ceph.cephfs_clients | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
+
+- name: "Retrieve CephFS client keys"
+  ansible.builtin.command:
+    argv:
+      - "cephadm"
+      - "shell"
+      - "--"
+      - "ceph"
+      - "auth"
+      - "get-key"
+      - "client.{{ iac_resource.client_id }}"
+  register: cephfs_client_keys
+  changed_when: false
+  no_log: true
+  loop: "{{ iac_blueprint.ceph.cephfs_clients | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
+
+- name: "Install CephFS client key files"
+  ansible.builtin.copy:
+    dest: "/etc/ceph/ceph.client.{{ iac_resource.iac_resource.client_id }}.secret"
+    content: "{{ iac_resource.stdout | trim }}\n"
+    owner: "root"
+    group: "root"
+    mode: "0600"
+  become: true
+  delegate_to: "{{ iac_resource.iac_resource.host }}"
+  no_log: true
+  loop: "{{ cephfs_client_keys.results | default([]) }}"
+  loop_control:
+    loop_var: iac_resource
+
+- name: "Persist CephFS client mounts"
+  ansible.posix.mount:
+    src: "{{ iac_resource.client_id }}@.{{ iac_resource.filesystem }}=/"
+    path: "{{ iac_resource.mountpoint }}"
+    fstype: "ceph"
+    opts: "mon_addr={{ cephfs_monitor_endpoints | join('/') }},ms_mode={{ cephfs_monitor_ms_mode }},secretfile=/etc/ceph/ceph.client.{{ iac_resource.client_id }}.secret,_netdev,noatime"
+    state: "mounted"
+  become: true
+  delegate_to: "{{ iac_resource.host }}"
+  no_log: true
+  loop: "{{ iac_blueprint.ceph.cephfs_clients | default([]) }}"
+  loop_control:
+    loop_var: iac_resource

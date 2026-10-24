@@ -1,6 +1,6 @@
-> **Maturity State: Beta**<br>
-> **RC Readiness: 73% (floor)**
-> **Assessment ref:** commit [`3706511`](https://github.com/idarsi/ansible-iac-role-ceph/commit/3706511)
+> **Maturity State: Beta**  
+> **RC Readiness: 84%**  
+> **Assessment ref:** uncommitted working tree on `update/cephfs-support`, based on HEAD `0561529` (not the base commit alone)  
 
 ANSIBLE-IAC-ROLE-CEPH
 ===============================
@@ -21,7 +21,7 @@ for further information.
 The role manages:
 
 - Ceph cluster bootstrap and monitor-host registration (experimental).
-- Cephadm monitor/manager placement, explicitly declared OSD device requests, and declared pool creation (experimental; not production-verified).
+- Cephadm monitor/manager placement, explicitly declared OSD device requests, declared pool creation, and CephFS volumes/MDS plus persistent client mounts (experimental; not production-verified).
 
 The role does not manage:
 
@@ -41,7 +41,7 @@ Supported states
 | State               | Behaviour                     |
 |---------------------|-------------------------------|
 | validate            | Validates blueprint only; makes no target changes. |
-| install             | Bootstraps the first monitor host, registers declared monitor and OSD hosts, applies monitor/manager and per-device OSD service specs, and creates pools. Repeated application is declarative. |
+| install             | Bootstraps the first monitor host, registers declared monitor and OSD hosts, applies monitor/manager and per-device OSD service specs, creates pools and CephFS volumes/MDS, waits for an active MDS rank for every declared filesystem, then configures CephFS clients (repositories, packages, credentials, and persistent mounts). No removal states are implemented. |
 
 Quick start
 -----------
@@ -80,6 +80,8 @@ iac_blueprint:
     osds:
       - { host: "ceph-osd-a", device: "/dev/sdb" }
     pools: []
+    filesystems: []
+    cephfs_clients: []
 
 Top-level blueprint variables
 -----------------------------
@@ -93,9 +95,48 @@ Top-level blueprint variables
 | osds              | no                | []            | Explicit host/device records. A device path must be unique per host; the same path on different hosts is valid. Omitted records do not remove existing OSDs. Hosts are registered from this declaration, so OSD-only inventory hosts are supported. |
 | allow_osd_provisioning | no          | false         | Explicitly permits submission of declared device requests to Ceph's orchestrator. Must be boolean `true` when `osds` is non-empty. It does not establish that disks are safe to use. |
 | pools             | no                | []            | Pools to create, with optional pg_num (default 32). |
+| filesystems       | no                | []            | CephFS volumes to create; each record has a unique name and optional positive `mds_count` (default 2). The role manages numeric MDS daemon count; an existing matching orchestrator MDS spec with unsupported placement fails before service-spec, pool/filesystem, and client convergence. Ceph's `ceph fs volume create` owns filesystem pools and deploys MDS. |
+| cephfs_clients    | no                | []            | Client mounts: inventory `host`, declared `filesystem`, absolute `mountpoint`, unique `client_id`. Grants the client read/write access to the named filesystem and persists a kernel CephFS mount. Each `client_id` is role-owned and exclusive; its exact scoped CephX capabilities are reconciled on every install convergence. |
 
 Configuration examples
 ----------------------
+
+For shared media storage, add a volume and an inventory client. CephX secrets are
+written directly to root-only files on the client, and secret-bearing tasks are
+suppressed from Ansible output; no key is set as a fact. Treat every declared
+`client_id` as exclusively role-owned: existing capabilities are replaced with
+the declared filesystem-scoped permissions on every convergence. Do not share
+these identities with other operators or workloads. Client mounts use the
+monitor IP:port addresses reported by `ceph mon dump`. If any monitor advertises
+Messenger v2, only v2 endpoints are selected and the mount uses
+`ms_mode=prefer-secure`; otherwise it selects v1 endpoints with `ms_mode=legacy`.
+Ceph v2 prefers encrypted messenger transport and can fall back to CRC when
+secure mode is denied by the cluster.
+Protocol types are never mixed under one mount mode, and one reachable monitor
+endpoint is sufficient. IPv4 addresses and bracketed IPv6 addresses are
+supported. The kernel mount source uses
+`client_id@.filesystem=/`; protocol prefixes and trailing nonce values are
+removed from monitor endpoints. `ansible.posix.mount` persists it with
+`state: mounted`.
+Ensure client nodes can reach the monitor and MDS networks. The role does not
+remove filesystems, credentials, mounts, or data. Only declared client hosts
+receive the pinned Ceph Tentacle RPM repository; TLS and RPM signature checks
+are enabled with the official Ceph release key, and client OS support is
+validated from facts gathered on each client. On those client hosts only, the
+role installs Rocky's signed `epel-release` package from Rocky Extras, enables
+CRB with `crb enable` (and fails clearly when the command is unavailable), then
+installs `ceph-common` so its EPEL/CRB dependencies are resolvable. An empty
+`cephfs_clients` list leaves client repositories and package sources untouched.
+The role recognizes Rocky `crb status` responses such as `CRB repo is disabled`
+and `CRB repo is enabled and named: crb`; it enables CRB only when reported
+disabled and fails on unsuccessful commands or unrecognized output.
+
+```yaml
+filesystems:
+  - { name: "media", mds_count: 2 }
+cephfs_clients:
+  - { host: "media-web-01", filesystem: "media", mountpoint: "/srv/media", client_id: "media-web-01" }
+```
 
 **This role is not production-ready.** OSD provisioning is disabled by default. To submit requests, set `allow_osd_provisioning: true` and explicitly declare OSD host/device records; otherwise validation rejects any non-empty `osds` list before host mutation. This opt-in is only authorization to submit documented Ceph OSD service specs (`data_devices.paths`) using `ceph orch apply -i`; it does **not** prove a device is safe, unused, or intended for Ceph. Review every host and device independently with `ceph orch device ls` and verify ownership/backups before enabling. Ceph's availability checks are not a disk-safety guarantee, and this role does not wipe devices.
 

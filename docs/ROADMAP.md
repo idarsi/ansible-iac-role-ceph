@@ -2,9 +2,9 @@
 
 ## Current reassessment
 
-This assessment is for commit `3706511` (`test: target Rocky 10 for Ceph install mock`).
-At that assessed HEAD, this role is **Beta / 73% RC Readiness (floor)**
-(73.5% before flooring).
+This assessment is for the uncommitted current working tree on branch
+`update/cephfs-support`, based on commit `0561529`. This role is
+**Beta / 84% RC Readiness (84.5 before floor)**.
 The score is an engineering evidence score, not a production-suitability rating.
 The scorecard below records current evidence and the gates required for full
 RC readiness; planned work earns no points.
@@ -12,31 +12,33 @@ RC readiness; planned work earns no points.
 | Score area | Maximum | Current | Evidence and gap |
 |---|---:|---:|---|
 | Scope and public contract | 12 | 10 | Blueprint/states and test matrix are documented; general platform support remains unverified. |
-| Functional completeness | 20 | 15 | Rocky 10 KVM verified bootstrap, host registration, monitor quorum and active/standby manager checks, OSDs and pool; sustained HA/failover, failure/recovery, lifecycle removal/upgrade and Rocky 9 live behavior remain unverified. |
-| Validation and safety | 20 | 13 | Input validation, install-mock, device inventory guard, and scoped KVM cleanup have evidence; physical-device safety and check-mode coverage remain limited. |
-| Convergence and recovery | 13 | 8 | Two live convergences and owned-unavailable OSD repeat passed; true changed reporting and failure/recovery behavior remain unverified. |
-| Automated testing and CI | 25 | 20.5 | Validation, install-mock, production lint and example syntax passed; full Rocky 10 KVM eight-action sequence passed. Rocky 9 live test, failure/lifecycle coverage and established shared GitHub CI remain gaps. |
+| Functional completeness | 20 | 19 | Fresh Rocky 10 KVM evidence verifies the live workflow; failure/recovery, lifecycle removal/upgrade and Rocky 9 live behavior remain unverified. |
+| Validation and safety | 20 | 15 | Input validation, install-mock, device inventory guard, scoped KVM cleanup and CephFS client safety behavior have evidence; physical-device safety and check-mode coverage remain limited. |
+| Convergence and recovery | 13 | 10 | Fresh KVM repeat convergence produced zero changes; failure recovery and true changed reporting remain unverified. |
+| Automated testing and CI | 25 | 23.5 | Fresh KVM and install-mock evidence passed; Rocky 9 live test and failure/lifecycle coverage remain gaps. CI result enforcement at this ref remains unverified. |
 | Documentation and release hygiene | 10 | 7 | README, testing guidance and roadmap updated with accurate evidence and limitations; release and upgrade guidance remain incomplete. |
-| **Total** | **100** | **73.5** | **Beta (73% floor)** |
+| **Total** | **100** | **84.5** | **Beta (84% floor)** |
 
 ## Evidence at assessed commit
 
-At this assessed commit, bootstrap pins to the official Tentacle image
+At this assessed working tree on `update/cephfs-support`, based on HEAD
+`0561529`, bootstrap pins to the official Tentacle image
 `quay.io/ceph/ceph:v20.2.4`, checks orchestrator device inventory before each
 OSD spec, and waits up to 60 seconds for declared hosts to appear in
 `ceph orch host ls`. The mock scenario exercises both accepted and rejected
 device inventory. These implementation and mock-contract details, together
 with the live run below, are the evidence for this assessment.
-The assessed evidence includes a passing full Rocky 10 Tentacle 20.2.4
-`kvm-ceph` sequence: create, first converge and verify, second converge and
-verify (including owned-unavailable OSD repeat), and cleanup. Verification
-observed three monitors in quorum, active and standby managers, two OSDs up/in,
-the pool, and non-error health. Cleanup removed scenario guests, disks and OSDs
-while preserving shared network, pool and base images. It ran with shared
+Fresh assessed evidence includes a passing eight-action Rocky 10 Tentacle 20.2.4
+`kvm-ceph` CephFS sequence: create, converge and verify, repeat converge and
+verify with zero changes, then cleanup. Verification covered CephFS filesystem
+and active MDS, client credentials and persistent kernel mounts on declared
+clients, including cross-node mounts. Cleanup removed scenario guests, disks,
+OSDs and mounts while preserving shared resources. It ran with shared
 environment HEAD `b6b56db`, Ansible Core 2.20.8 and Molecule 26.8.0. Validation,
 install-mock, production lint and example syntax also passed. This evidence
-does not demonstrate failure/recovery, upgrade/removal, true changed reporting,
-Rocky 9 live support, or successful shared GitHub CI.
+does not demonstrate failure/recovery, upgrade/removal, or Rocky 9 live support;
+Rocky 9 remains unsupported by live evidence. CI result enforcement at this ref
+is unverified. None of this evidence establishes production suitability.
 
 Version source: [Ceph Tentacle release notes](https://docs.ceph.com/en/latest/releases/tentacle/)
 identify v20.2.4 (released 2026-08-19) as the current stable Tentacle release

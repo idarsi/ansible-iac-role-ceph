@@ -1,0 +1,23 @@
+---
+###############################################################################
+#
+# normalize_monitor_fixture.yml
+#
+# @author Arsi Atomi
+#
+###############################################################################
+
+- name: "Set representative Tentacle monitor dump fixture"
+  ansible.builtin.set_fact:
+    cephfs_mon_dump:
+      stdout: "{{ {'mons': cephfs_fixture.mons} | to_json }}"
+
+- name: "Run production monitor normalization and validation tasks"
+  ansible.builtin.include_tasks: normalize_monitor_endpoints.yml
+
+- name: "Assert monitor normalization result"
+  ansible.builtin.assert:
+    that:
+      - cephfs_monitor_endpoints == cephfs_fixture.expected
+      - cephfs_monitor_protocol == cephfs_fixture.expected_protocol
+      - cephfs_monitor_ms_mode == cephfs_fixture.expected_ms_mode
