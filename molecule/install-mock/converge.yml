@@ -216,7 +216,7 @@
                 printf 'device-inventory %s\n' "$5" >> /tmp/ceph-mock-state/ceph-mock.log
                 count=$(cat /tmp/ceph-mock-state/device-refresh-count 2>/dev/null || echo 0); count=$((count + 1)); echo "$count" > /tmp/ceph-mock-state/device-refresh-count
                 if [ "$count" -eq 1 ]; then printf '[]\n'; elif [ -f /tmp/ceph-mock-state/device-duplicate-host ]; then printf '[{"name":"ceph-install-mock","addr":"ceph-install-mock","devices":[{"path":"/dev/sdb","available":true,"rejected_reasons":[]}],"labels":[]},{"name":"ceph-install-mock","addr":"ceph-install-mock","devices":[],"labels":[]}]\n'; elif [ -f /tmp/ceph-mock-state/device-rejected ]; then printf '[{"name":"ceph-install-mock","addr":"ceph-install-mock","devices":[{"path":"/dev/sdb","available":true,"rejected_reasons":[]},{"path":"/dev/sdb","available":false,"rejected_reasons":["Has a FileSystem"]}],"labels":[]}]\n'; elif [ "$count" -gt 2 ] && [ -f /tmp/ceph-mock-state/osd-spec ]; then printf '[{"name":"ceph-install-mock","addr":"ceph-install-mock","devices":[{"path":"/dev/sdb","available":false,"rejected_reasons":["Has a FileSystem"]}],"labels":[]}]\n'; else printf '[{"name":"ceph-install-mock","addr":"ceph-install-mock","devices":[{"path":"/dev/sdb","available":true,"rejected_reasons":[]}],"labels":[]}]\n'; fi ;;
-              '3:orch:ls:--export:::::') if [ -f /tmp/ceph-mock-state/export-failure ]; then exit 1; elif [ -f /tmp/ceph-mock-state/export-malformed ]; then printf 'unexpected-scalar\n'; elif [ -f /tmp/ceph-mock-state/export-mismatched-id ]; then printf '%s\n' '---' 'service_type: osd' 'service_id: other-device-service' 'placement:' '  hosts: [ceph-install-mock]' 'spec:' '  data_devices:' '    paths: [/dev/sdb]'; elif [ -f /tmp/ceph-mock-state/export-extra-placement ]; then printf '%s\n' '---' 'service_type: osd' 'service_id: device_9cb199a494bd28d019e3129be0e07cceadb86916ffe7cb9bd334bbe11b6f40f4' 'service_name: osd.device_9cb199a494bd28d019e3129be0e07cceadb86916ffe7cb9bd334bbe11b6f40f4' 'placement:' '  hosts: [ceph-install-mock]' '  host_pattern: ceph-install-mock' 'spec:' '  data_devices:' '    paths: [/dev/sdb]'; elif [ -f /tmp/ceph-mock-state/osd-spec ]; then cat /tmp/ceph-mock-state/osd-spec; else :; fi; if [ -f /tmp/ceph-mock-state/mds-missing-id ]; then printf '%s\n' '---' 'service_type: mds' 'placement:' '  count: 2'; elif [ -f /tmp/ceph-mock-state/mds-unrelated ]; then printf '%s\n' '---' 'service_type: mds' 'service_id: unrelated-fs' 'placement:' '  hosts: [ceph-install-mock]' '---' 'service_type: mds' 'service_id: test-fs' 'placement:' '  count: 2'; elif [ -f /tmp/ceph-mock-state/mds-duplicate ]; then printf '%s\n' '---' 'service_type: mds' 'service_id: test-fs' 'placement:' '  count: 2' '---' 'service_type: mds' 'service_id: test-fs' 'placement:' '  count: 2'; elif [ -f /tmp/ceph-mock-state/mds-invalid-count ]; then printf '%s\n' '---' 'service_type: mds' 'service_id: test-fs' 'placement:' '  count: true'; elif [ -f /tmp/ceph-mock-state/mds-spec ]; then cat /tmp/ceph-mock-state/mds-spec; fi ;;
+              '3:orch:ls:--export:::::') if [ -f /tmp/ceph-mock-state/export-failure ]; then exit 1; elif [ -f /tmp/ceph-mock-state/export-malformed ]; then printf 'unexpected-scalar\n'; elif [ -f /tmp/ceph-mock-state/export-mismatched-id ]; then printf '%s\n' '---' 'service_type: osd' 'service_id: other-device-service' 'placement:' '  hosts: [ceph-install-mock]' 'spec:' '  data_devices:' '    paths: [/dev/sdb]'; elif [ -f /tmp/ceph-mock-state/export-extra-placement ]; then printf '%s\n' '---' 'service_type: osd' 'service_id: device_9cb199a494bd28d019e3129be0e07cceadb86916ffe7cb9bd334bbe11b6f40f4' 'service_name: osd.device_9cb199a494bd28d019e3129be0e07cceadb86916ffe7cb9bd334bbe11b6f40f4' 'placement:' '  hosts: [ceph-install-mock]' '  host_pattern: ceph-install-mock' 'spec:' '  data_devices:' '    paths: [/dev/sdb]'; elif [ -f /tmp/ceph-mock-state/export-missing-service-id ]; then printf '%s\n' '---' 'service_type: osd' 'placement:' '  hosts: [ceph-install-mock]' 'spec:' '  data_devices:' '    paths: [/dev/sdb]'; elif [ -f /tmp/ceph-mock-state/osd-spec ]; then cat /tmp/ceph-mock-state/osd-spec; else :; fi; if [ -f /tmp/ceph-mock-state/mds-missing-id ]; then printf '%s\n' '---' 'service_type: mds' 'placement:' '  count: 2'; elif [ -f /tmp/ceph-mock-state/mds-unrelated ]; then printf '%s\n' '---' 'service_type: mds' 'service_id: unrelated-fs' 'placement:' '  hosts: [ceph-install-mock]' '---' 'service_type: mds' 'service_id: test-fs' 'placement:' '  count: 2'; elif [ -f /tmp/ceph-mock-state/mds-duplicate ]; then printf '%s\n' '---' 'service_type: mds' 'service_id: test-fs' 'placement:' '  count: 2' '---' 'service_type: mds' 'service_id: test-fs' 'placement:' '  count: 2'; elif [ -f /tmp/ceph-mock-state/mds-invalid-count ]; then printf '%s\n' '---' 'service_type: mds' 'service_id: test-fs' 'placement:' '  count: true'; elif [ -f /tmp/ceph-mock-state/mds-spec ]; then cat /tmp/ceph-mock-state/mds-spec; fi ;;
               '4:orch:apply:-i:-::::') printf 'daemon-apply\n' >> /tmp/ceph-mock-state/ceph-mock.log; spec=$(cat); SPEC="$spec" python3 -c 'import json,os,re,sys; x=json.loads(os.environ["SPEC"]); common={"placement":{"hosts":["ceph-install-mock","ceph-b","ceph-c"]}}; kind=x.get("service_type"); valid=(kind in ("mon","mgr") and x==dict(common,service_type=kind)) or (kind=="mds" and x=={"service_type":"mds","service_id":"test-fs","placement":{"count":2}}) or (kind=="osd" and re.fullmatch(r"device_[0-9a-f]{64}",x.get("service_id","")) and x=={"service_type":"osd","service_id":x["service_id"],"placement":{"hosts":["ceph-install-mock"]},"spec":{"data_devices":{"paths":["/dev/sdb"]}}}); sys.exit(0 if valid else 2)' || { echo "unexpected service spec: $spec" >&2; exit 2; }; compact=$(printf '%s' "$spec" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin),separators=(",",":")))'); printf 'spec %s\n' "$compact" >> /tmp/ceph-mock-state/ceph-mock.log; case "$compact" in *'"service_type":"mds"'*) echo 0 > /tmp/ceph-mock-state/mds-stat-count ;; esac; SPEC="$compact" python3 -c 'import json,os; x=json.loads(os.environ["SPEC"]); print("---\n"+json.dumps(dict(x,service_name="osd."+x["service_id"],spec=dict(x["spec"],objectstore="bluestore",filter_logic="AND"))) if x["service_type"]=="osd" else "")' > /tmp/ceph-mock-state/new-osd-spec; if grep -q '"service_type":"osd"' /tmp/ceph-mock-state/new-osd-spec; then cp /tmp/ceph-mock-state/new-osd-spec /tmp/ceph-mock-state/osd-spec; fi; if printf '%s' "$compact" | grep -q '"service_type":"mds"'; then printf '%s\n' '---' "$compact" > /tmp/ceph-mock-state/mds-spec; fi ;;
               '5:fs:volume:ls:--format:json:::') if [ -f /tmp/ceph-mock-state/filesystems ]; then printf '[{"name":"test-fs"}]\n'; else printf '[]\n'; fi ;;
               '4:fs:volume:create:test-fs::::') echo "volume-create $*" >> /tmp/ceph-mock-state/ceph-mock.log; touch /tmp/ceph-mock-state/filesystems ;;
@@ -796,7 +796,7 @@
         state: absent
     - name: "Require malformed exported service identity to fail before mutation"
       block:
-        - name: "Inject exported MDS service without an identity"
+        - name: "Inject exported OSD service without an identity"
           ansible.builtin.shell: |
             : > /tmp/ceph-mock-state/export-missing-service-id
             : > {{ ceph_mock_log }}
@@ -819,7 +819,8 @@
         - name: "Assert malformed exported service is rejected structurally"
           ansible.builtin.assert:
             that:
-              - "'Cannot safely validate OSD ownership' in (ansible_failed_result | string)"
+              - "'Cannot safely validate Ceph OSD service specifications' in (ansible_failed_result | string)"
+              - ansible_failed_task.name == "Require exported OSD specifications to have string service IDs"
     - name: "Assert malformed service identity failed before resource mutations"
       ansible.builtin.command: "cat {{ ceph_mock_log }}"
       register: malformed_service_log
@@ -828,7 +829,8 @@
       ansible.builtin.assert:
         that:
           - "'daemon-apply' not in malformed_service_log.stdout_lines"
-          - "'pool-preflight' not in malformed_service_log.stdout_lines"
+          - "malformed_service_log.stdout is not search('^device-inventory ', multiline=true)"
+          - "'cephadm shell -- ceph orch apply -i -' not in malformed_service_log.stdout_lines"
           - "'pool-create' not in malformed_service_log.stdout_lines"
           - "'fs-volume-create' not in malformed_service_log.stdout_lines"
     - name: "Clear malformed service identity injection"
@@ -837,7 +839,7 @@
         state: absent
     - name: "Require unrelated MDS host placement to be accepted"
       block:
-        - name: "Inject unrelated MDS host-placement spec and matching target OSD spec"
+        - name: "Inject unrelated MDS host-placement spec and matching target MDS spec"
           ansible.builtin.shell: |
             : > /tmp/ceph-mock-state/export-unrelated-mds
             : > {{ ceph_mock_log }}
@@ -853,13 +855,23 @@
                 cluster_name: "ceph"
                 monitors: ["ceph-install-mock", "ceph-b", "ceph-c"]
                 cluster_network: "10.20.0.0/24"
-                allow_osd_provisioning: true
-                osds: [{ host: "ceph-install-mock", device: "/dev/sdb" }]
-                pools: [{ name: "test-pool", pg_num: 16 }]
+                filesystems: [{ name: "test-fs", mds_count: 2 }]
       rescue:
         - name: "Fail if unrelated MDS placement is rejected"
           ansible.builtin.fail:
-            msg: "Unrelated MDS host placement must not be rejected during target OSD validation"
+            msg: "Unrelated MDS host placement must not be rejected during target MDS validation"
+    - name: "Read unrelated MDS placement install log"
+      ansible.builtin.command: "cat {{ ceph_mock_log }}"
+      register: unrelated_mds_host_log
+      changed_when: false
+    - name: "Assert unrelated MDS placement is accepted without target MDS apply"
+      ansible.builtin.assert:
+        that:
+          - "'cephadm shell -- ceph orch ls --export' in unrelated_mds_host_log.stdout_lines"
+          - >-
+            unrelated_mds_host_log.stdout_lines
+            | select('equalto', 'spec {\"service_type\":\"mds\",\"service_id\":\"test-fs\",\"placement\":{\"count\":2}}')
+            | list | length == 0
     - name: "Clear unrelated MDS placement injection"
       ansible.builtin.file:
         path: "/tmp/ceph-mock-state/export-unrelated-mds"

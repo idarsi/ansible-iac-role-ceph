@@ -3,26 +3,28 @@
 ## Current reassessment
 
 This assessment is for the uncommitted current working tree on branch
-`update/cephfs-support`, based on commit `0561529`. This role is
-**Beta / 84% RC Readiness (84.5 before floor)**.
+`update/cephfs-support`, based on HEAD `8ae3a38`, including the two uncommitted
+MDS identity validation and install-mock changes. This role is
+**Beta / 81% RC Readiness (81.5 before floor)**.
 The score is an engineering evidence score, not a production-suitability rating.
 The scorecard below records current evidence and the gates required for full
 RC readiness; planned work earns no points.
 
 | Score area | Maximum | Current | Evidence and gap |
 |---|---:|---:|---|
-| Scope and public contract | 12 | 10 | Blueprint/states and test matrix are documented; general platform support remains unverified. |
-| Functional completeness | 20 | 19 | Fresh Rocky 10 KVM evidence verifies the live workflow; failure/recovery, lifecycle removal/upgrade and Rocky 9 live behavior remain unverified. |
-| Validation and safety | 20 | 15 | Input validation, install-mock, device inventory guard, scoped KVM cleanup and CephFS client safety behavior have evidence; physical-device safety and check-mode coverage remain limited. |
-| Convergence and recovery | 13 | 10 | Fresh KVM repeat convergence produced zero changes; failure recovery and true changed reporting remain unverified. |
-| Automated testing and CI | 25 | 23.5 | Fresh KVM and install-mock evidence passed; Rocky 9 live test and failure/lifecycle coverage remain gaps. CI result enforcement at this ref remains unverified. |
+| Scope and public contract | 12 | 10 | Blueprint, states, inputs, and test matrix are documented; broader platform/dependency support remains unverified. |
+| Functional completeness | 20 | 17 | Rocky 10 KVM evidence verifies the principal live CephFS workflow; lifecycle transitions, Rocky 9 live behavior, and failure/recovery remain unverified. |
+| Validation and safety | 20 | 15 | Input and MDS identity validation, install-mock, device inventory guard, scoped KVM cleanup, and CephFS client safety have evidence; physical-device safety and check-mode coverage remain limited. |
+| Convergence and recovery | 13 | 10 | KVM repeat convergence produced zero changes; failure recovery and accurate changed reporting remain unverified. |
+| Automated testing and CI | 25 | 22 | Validation, install-mock (including MDS identity cases), production lint, example syntax, and live KVM evidence exist; lifecycle/failure and Rocky 9 live coverage remain gaps. CI result enforcement at this ref remains unverified. |
 | Documentation and release hygiene | 10 | 7 | README, testing guidance and roadmap updated with accurate evidence and limitations; release and upgrade guidance remain incomplete. |
-| **Total** | **100** | **84.5** | **Beta (84% floor)** |
+| **Total** | **100** | **81.5** | **Beta (81% floor)** |
 
 ## Evidence at assessed commit
 
 At this assessed working tree on `update/cephfs-support`, based on HEAD
-`0561529`, bootstrap pins to the official Tentacle image
+`8ae3a38`, including the uncommitted MDS identity validation and install-mock
+changes, bootstrap pins to the official Tentacle image
 `quay.io/ceph/ceph:v20.2.4`, checks orchestrator device inventory before each
 OSD spec, and waits up to 60 seconds for declared hosts to appear in
 `ceph orch host ls`. The mock scenario exercises both accepted and rejected

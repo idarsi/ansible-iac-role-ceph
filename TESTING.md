@@ -5,7 +5,8 @@ multi-host KVM integration scenario. Historical validation, install-mock,
 production-profile lint, example syntax, and the then-current KVM sequence passed
 at commit `3706511`; that KVM evidence predates the current CephFS coverage.
 On the uncommitted working tree on `update/cephfs-support`, based on HEAD
-`0561529`, validation, install-mock, production-profile lint, and example syntax
+`8ae3a38` with uncommitted MDS identity validation and install-mock changes,
+validation, install-mock, production-profile lint, and example syntax
 passed. The latest Rocky 10 Tentacle 20.2.4 `kvm-ceph` Molecule sequence passed
 all eight actions (create, converge/verify twice, cleanup) using shared
 environment HEAD `b6b56db`, Ansible Core 2.20.8, and Molecule 26.8.0. The live

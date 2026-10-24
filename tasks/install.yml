@@ -316,6 +316,13 @@
         | selectattr('service_type', 'defined')
         | selectattr('service_type', 'string')
         | list | length == ceph_exported_service_specs | length
+    fail_msg: "Cannot safely validate Ceph service specifications: ceph orch ls --export failed or returned invalid YAML."
+  when:
+    - (iac_blueprint.ceph.osds | default([]) | length > 0 and iac_blueprint.ceph.allow_osd_provisioning | default(false)) or (iac_blueprint.ceph.filesystems | default([]) | length > 0)
+
+- name: "Require exported OSD specifications to have string service IDs"
+  ansible.builtin.assert:
+    that:
       - >-
         ceph_exported_service_specs
         | selectattr('service_type', 'equalto', 'osd')
@@ -325,9 +332,10 @@
         ceph_exported_service_specs
         | selectattr('service_type', 'equalto', 'osd')
         | list | length
-    fail_msg: "Cannot safely validate Ceph service specifications: ceph orch ls --export failed or returned invalid YAML."
+    fail_msg: "Cannot safely validate Ceph OSD service specifications: every OSD specification must have a string service_id."
   when:
-    - (iac_blueprint.ceph.osds | default([]) | length > 0 and iac_blueprint.ceph.allow_osd_provisioning | default(false)) or (iac_blueprint.ceph.filesystems | default([]) | length > 0)
+    - iac_blueprint.ceph.osds | default([]) | length > 0
+    - iac_blueprint.ceph.allow_osd_provisioning | default(false)
 
 - name: "Require exported MDS specifications to have string service IDs"
   ansible.builtin.assert:
@@ -343,7 +351,7 @@
         | list | length
     fail_msg: "Cannot safely validate Ceph MDS service specifications: every MDS specification must have a string service_id."
   when:
-    - (iac_blueprint.ceph.osds | default([]) | length > 0 and iac_blueprint.ceph.allow_osd_provisioning | default(false)) or (iac_blueprint.ceph.filesystems | default([]) | length > 0)
+    - iac_blueprint.ceph.filesystems | default([]) | length > 0
 
 - name: "Reject duplicate or invalid MDS specifications for declared filesystems"
   ansible.builtin.assert:
