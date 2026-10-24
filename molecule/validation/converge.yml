@@ -11,7 +11,7 @@
       ansible.builtin.add_host:
         name: "{{ item }}"
         groups: "all"
-      loop: ["ceph-b", "ceph-c"]
+      loop: ["ceph-b", "ceph-c", "ceph-client"]
       changed_when: false
 
     - name: "Run accepted validation contract"
@@ -28,3 +28,13 @@
             pools:
               - name: "validation-pool"
                 pg_num: 16
+            filesystems: [{ name: "media", mds_count: 2 }]
+            cephfs_clients:
+              - { host: "ceph-client", filesystem: "media", mountpoint: "/srv/media", client_id: "media-client" }
+              - { host: "ceph-validation", filesystem: "media", mountpoint: "/mnt/ceph_media", client_id: "media-validation" }
+
+    - name: "Reject unsafe CephFS mountpoints"
+      ansible.builtin.assert:
+        that:
+          - item is not match('^/(mnt|media|srv)/[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*$')
+      loop: ["/", "/etc", "/usr/local", "/var/lib/ceph", "/mnt/../etc", "/srv//media", "/media/.", "/mnt/unsafe name"]

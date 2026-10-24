@@ -1,0 +1,68 @@
+---
+###############################################################################
+#
+# normalize_monitor_endpoints.yml
+#
+# @author Arsi Atomi
+#
+###############################################################################
+
+- name: "Validate monitor address records for CephFS mounts"
+  ansible.builtin.assert:
+    that:
+      - (cephfs_mon_dump.stdout | from_json).mons is sequence
+      - (cephfs_mon_dump.stdout | from_json).mons is not string
+      - (cephfs_mon_dump.stdout | from_json).mons | length > 0
+      - >-
+        (cephfs_mon_dump.stdout | from_json).mons
+        | selectattr('public_addrs.addrvec', 'defined') | list | length
+        == (cephfs_mon_dump.stdout | from_json).mons | length
+    fail_msg: "Ceph monitor dump is missing a usable v1/v2 address for one or more monitors."
+
+- name: "Initialize CephFS mount monitor endpoint list"
+  ansible.builtin.set_fact:
+    cephfs_monitor_endpoints: []
+
+- name: "Select CephFS monitor protocol and kernel messenger mode"
+  ansible.builtin.set_fact:
+    cephfs_monitor_protocol: >-
+      {{ 'v2' if (cephfs_mon_dump.stdout | from_json).mons
+         | map(attribute='public_addrs.addrvec') | flatten
+         | selectattr('type', 'equalto', 'v2') | list | length > 0 else 'v1' }}
+    cephfs_monitor_ms_mode: >-
+      {{ 'prefer-secure' if (cephfs_mon_dump.stdout | from_json).mons
+         | map(attribute='public_addrs.addrvec') | flatten
+         | selectattr('type', 'equalto', 'v2') | list | length > 0 else 'legacy' }}
+
+- name: "Require at least one address for the selected monitor protocol"
+  ansible.builtin.assert:
+    that:
+      - >-
+        (cephfs_mon_dump.stdout | from_json).mons
+        | map(attribute='public_addrs.addrvec') | flatten
+        | selectattr('type', 'equalto', cephfs_monitor_protocol)
+        | list | length > 0
+    fail_msg: "No Ceph monitor exposes an address for selected protocol {{ cephfs_monitor_protocol }}."
+
+- name: "Collect normalized kernel mount monitor addresses"
+  ansible.builtin.set_fact:
+    cephfs_monitor_endpoints: >-
+      {{ (cephfs_mon_dump.stdout | from_json).mons
+         | map(attribute='public_addrs.addrvec') | flatten
+         | selectattr('type', 'equalto', cephfs_monitor_protocol)
+         | map(attribute='addr')
+         | map('regex_replace', '^(v[12]:)', '')
+         | map('regex_replace', '/[0-9]+$', '') | list | unique }}
+
+- name: "Validate CephFS mount monitor endpoints"
+  ansible.builtin.assert:
+    that:
+      - cephfs_monitor_endpoints | length > 0
+      - cephfs_monitor_protocol in ['v1', 'v2']
+      - cephfs_monitor_ms_mode in ['legacy', 'prefer-secure']
+      - >-
+        cephfs_monitor_endpoints
+        | map('ceph_monitor_endpoint')
+        | select('equalto', true)
+        | list | length == cephfs_monitor_endpoints | length
+    fail_msg: "Ceph monitor dump contains no valid IPv4 or bracketed IPv6 IP:port addresses for CephFS mounts."
