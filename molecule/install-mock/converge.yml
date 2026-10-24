@@ -794,6 +794,76 @@
       ansible.builtin.file:
         path: "/tmp/ceph-mock-state/export-extra-placement"
         state: absent
+    - name: "Require malformed exported service identity to fail before mutation"
+      block:
+        - name: "Inject exported MDS service without an identity"
+          ansible.builtin.shell: |
+            : > /tmp/ceph-mock-state/export-missing-service-id
+            : > {{ ceph_mock_log }}
+          changed_when: false
+        - name: "Attempt install with malformed exported service identity"
+          ansible.builtin.include_role:
+            name: ansible-iac-role-ceph
+          vars:
+            state: "install"
+            ceph_bootstrap_sentinel: "/tmp/ceph-mock-state/ceph.conf"
+            iac_blueprint:
+              ceph:
+                cluster_name: "ceph"
+                monitors: ["ceph-install-mock", "ceph-b", "ceph-c"]
+                cluster_network: "10.20.0.0/24"
+                allow_osd_provisioning: true
+                osds: [{ host: "ceph-install-mock", device: "/dev/sdb" }]
+                pools: [{ name: "test-pool", pg_num: 16 }]
+      rescue:
+        - name: "Assert malformed exported service is rejected structurally"
+          ansible.builtin.assert:
+            that:
+              - "'Cannot safely validate OSD ownership' in (ansible_failed_result | string)"
+    - name: "Assert malformed service identity failed before resource mutations"
+      ansible.builtin.command: "cat {{ ceph_mock_log }}"
+      register: malformed_service_log
+      changed_when: false
+    - name: "Check malformed service identity log has no mutations"
+      ansible.builtin.assert:
+        that:
+          - "'daemon-apply' not in malformed_service_log.stdout_lines"
+          - "'pool-preflight' not in malformed_service_log.stdout_lines"
+          - "'pool-create' not in malformed_service_log.stdout_lines"
+          - "'fs-volume-create' not in malformed_service_log.stdout_lines"
+    - name: "Clear malformed service identity injection"
+      ansible.builtin.file:
+        path: "/tmp/ceph-mock-state/export-missing-service-id"
+        state: absent
+    - name: "Require unrelated MDS host placement to be accepted"
+      block:
+        - name: "Inject unrelated MDS host-placement spec and matching target OSD spec"
+          ansible.builtin.shell: |
+            : > /tmp/ceph-mock-state/export-unrelated-mds
+            : > {{ ceph_mock_log }}
+          changed_when: false
+        - name: "Install with unrelated MDS placement"
+          ansible.builtin.include_role:
+            name: ansible-iac-role-ceph
+          vars:
+            state: "install"
+            ceph_bootstrap_sentinel: "/tmp/ceph-mock-state/ceph.conf"
+            iac_blueprint:
+              ceph:
+                cluster_name: "ceph"
+                monitors: ["ceph-install-mock", "ceph-b", "ceph-c"]
+                cluster_network: "10.20.0.0/24"
+                allow_osd_provisioning: true
+                osds: [{ host: "ceph-install-mock", device: "/dev/sdb" }]
+                pools: [{ name: "test-pool", pg_num: 16 }]
+      rescue:
+        - name: "Fail if unrelated MDS placement is rejected"
+          ansible.builtin.fail:
+            msg: "Unrelated MDS host placement must not be rejected during target OSD validation"
+    - name: "Clear unrelated MDS placement injection"
+      ansible.builtin.file:
+        path: "/tmp/ceph-mock-state/export-unrelated-mds"
+        state: absent
     - name: "Exercise SSH prerequisite rejection before mutation"
       block:
         - name: "Remove install sentinel and clear mock activity log"

@@ -316,6 +316,15 @@
         | selectattr('service_type', 'defined')
         | selectattr('service_type', 'string')
         | list | length == ceph_exported_service_specs | length
+      - >-
+        ceph_exported_service_specs
+        | selectattr('service_type', 'equalto', 'osd')
+        | selectattr('service_id', 'defined')
+        | selectattr('service_id', 'string')
+        | list | length ==
+        ceph_exported_service_specs
+        | selectattr('service_type', 'equalto', 'osd')
+        | list | length
     fail_msg: "Cannot safely validate Ceph service specifications: ceph orch ls --export failed or returned invalid YAML."
   when:
     - (iac_blueprint.ceph.osds | default([]) | length > 0 and iac_blueprint.ceph.allow_osd_provisioning | default(false)) or (iac_blueprint.ceph.filesystems | default([]) | length > 0)
