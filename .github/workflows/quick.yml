@@ -27,7 +27,8 @@ jobs:
               ((attempt += 1))
             done
           }
-          retry ansible-galaxy collection install containers.podman:1.20.2
+          # Galaxy returned repeated HTTP 500s in CI; use this pinned GitHub source as a fallback.
+          retry ansible-galaxy collection install "git+https://github.com/containers/ansible-podman-collections.git,b657295880ea567441c609aae281ef007df3488c"
           retry ansible-galaxy collection install ansible.posix:2.1.0
       - name: Install Podman
         run: sudo apt-get update && sudo apt-get install -y podman
