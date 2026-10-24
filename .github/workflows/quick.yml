@@ -16,8 +16,19 @@ jobs:
       - name: Install test tools
         run: |
           python -m pip install "ansible-core==2.19.12" "molecule==26.8.0" "molecule-plugins[podman]==26.7.15" "ansible-lint==26.8.0"
-          ansible-galaxy collection install containers.podman:1.20.2
-          ansible-galaxy collection install ansible.posix:2.1.0
+          retry() {
+            local attempts=3 delay=10 attempt=1
+            while ! "$@"; do
+              if (( attempt >= attempts )); then
+                return 1
+              fi
+              echo "Command failed; retrying in ${delay}s (${attempt}/${attempts})..."
+              sleep "$delay"
+              ((attempt += 1))
+            done
+          }
+          retry ansible-galaxy collection install containers.podman:1.20.2
+          retry ansible-galaxy collection install ansible.posix:2.1.0
       - name: Install Podman
         run: sudo apt-get update && sudo apt-get install -y podman
       - name: Run validation contract scenario
