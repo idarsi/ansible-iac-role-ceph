@@ -28,10 +28,10 @@
         OSD_VOLUME_POOL: "{{ osd_volume_pool }}"
       changed_when: false
 
-    - name: Require both scenario-owned OSD volumes in the configured pool
+    - name: Require all scenario-owned OSD volumes in the configured pool
       ansible.builtin.shell: |
         set -euo pipefail
-        for vm in ceph-b ceph-c; do
+        for vm in ceph-a ceph-b ceph-c; do
           volume="idarsi-ceph-${DISK_SUFFIX}-${vm}-osd.qcow2"
           virsh --connect "$LIBVIRT_URI" vol-info --pool "$OSD_VOLUME_POOL" "$volume" >/dev/null
         done
@@ -47,6 +47,19 @@
   hosts: ceph-a
   become: true
   gather_facts: false
+  pre_tasks:
+    - name: Read live monitor capabilities for expected CephFS mount mode
+      ansible.builtin.command:
+        argv: ["cephadm", "shell", "--", "ceph", "mon", "dump", "--format", "json"]
+      register: cephfs_mon_dump
+      changed_when: false
+
+    - name: Derive expected CephFS mount mode from live monitor capabilities
+      ansible.builtin.set_fact:
+        expected_cephfs_ms_mode: >-
+          {{ 'prefer-secure' if (cephfs_mon_dump.stdout | from_json).mons
+             | map(attribute='public_addrs.addrvec') | flatten
+             | selectattr('type', 'equalto', 'v2') | list | length > 0 else 'legacy' }}
   tasks:
     - name: Read monitor quorum status
       ansible.builtin.command:
@@ -80,14 +93,14 @@
           - (mgr_dump.stdout | from_json).standbys | length >= 1
         fail_msg: "Expected an active manager and at least one standby: {{ mgr_dump.stdout }}"
 
-    - name: Wait for exactly two OSDs to become up and in
+    - name: Wait for exactly three OSDs to become up and in
       ansible.builtin.command:
         argv: ["cephadm", "shell", "--", "ceph", "osd", "stat", "--format", "json"]
       register: osd_stat
       changed_when: false
       retries: 60
       delay: 10
-      until: osd_stat.rc == 0 and (osd_stat.stdout | from_json).num_up_osds == 2 and (osd_stat.stdout | from_json).num_in_osds == 2
+      until: osd_stat.rc == 0 and (osd_stat.stdout | from_json).num_up_osds == 3 and (osd_stat.stdout | from_json).num_in_osds == 3
 
     - name: Verify declared pool exists
       ansible.builtin.command:
@@ -111,3 +124,93 @@
       ansible.builtin.assert:
         that: (health.stdout | from_json).status in ["HEALTH_OK", "HEALTH_WARN"]
         fail_msg: "Cluster reached HEALTH_ERR: {{ health.stdout }}"
+
+- name: Verify CephFS readiness and cross-node mounts
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    expected_cephfs_client_ids:
+      ceph-a: "molecule-mount-a"
+      ceph-b: "molecule-mount-b"
+      ceph-c: "molecule-mount-c"
+  tasks:
+    - name: Require CephFS client package and mount helper
+      ansible.builtin.shell: |
+        set -euo pipefail
+        rpm -q epel-release
+        dnf repolist --enabled crb | grep -q crb
+        rpm -q ceph-common
+        command -v mount.ceph
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Wait for scenario CephFS filesystem and active MDS rank
+      ansible.builtin.command:
+        argv: ["cephadm", "shell", "--", "ceph", "mds", "stat"]
+      delegate_to: ceph-a
+      register: cephfs_status
+      changed_when: false
+      retries: 60
+      delay: 10
+      until: >-
+        cephfs_status.rc == 0 and
+        (cephfs_status.stdout | ceph_mds_is_active('molecule-cephfs'))
+
+    - name: Read only the CephFS client capabilities for verification
+      ansible.builtin.shell: |
+        set -o pipefail
+        cephadm shell -- ceph auth get client.{{ expected_cephfs_client_ids[inventory_hostname] }} --format json \
+          | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)[0].get("caps", {})))'
+      args:
+        executable: /bin/bash
+      delegate_to: ceph-a
+      register: cephfs_auth_caps
+      changed_when: false
+      no_log: true
+
+    - name: Require exact filesystem-scoped client capabilities
+      ansible.builtin.assert:
+        that:
+          - (cephfs_auth_caps.stdout | from_json) | length == 3
+          - (cephfs_auth_caps.stdout | from_json).keys() | list | sort == ['mds', 'mon', 'osd']
+          - (cephfs_auth_caps.stdout | from_json).mon == "allow r"
+          - (cephfs_auth_caps.stdout | from_json).mds == "allow rw fsname=molecule-cephfs"
+          - (cephfs_auth_caps.stdout | from_json).osd == "allow rw tag cephfs data=molecule-cephfs"
+        fail_msg: "CephFS client capability verification failed."
+      no_log: true
+
+    - name: Write a unique probe into CephFS from the first node
+      ansible.builtin.copy:
+        content: "molecule-cephfs-visible-{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}"
+        dest: /mnt/molecule-cephfs/molecule-cross-node-probe
+        mode: "0644"
+      delegate_to: ceph-a
+
+    - name: Read the shared probe from every node's persistent mount
+      ansible.builtin.command:
+        argv: ["cat", "/mnt/molecule-cephfs/molecule-cross-node-probe"]
+      register: cephfs_probe
+      changed_when: false
+      failed_when: cephfs_probe.rc != 0 or not cephfs_probe.stdout.startswith('molecule-cephfs-visible-')
+
+    - name: Require the scenario CephFS mount to be persistent
+      ansible.builtin.command:
+        argv: ["findmnt", "--fstab", "--target", "/mnt/molecule-cephfs", "--noheadings", "--output", "OPTIONS"]
+      register: cephfs_fstab
+      changed_when: false
+      failed_when: >-
+        cephfs_fstab.rc != 0 or
+        'mon_addr=' not in cephfs_fstab.stdout or
+        (cephfs_fstab.stdout | regex_findall('ms_mode=(?:prefer-secure|legacy)') | length) != 1 or
+        (cephfs_fstab.stdout | regex_findall('ms_mode=' ~ hostvars['ceph-a'].expected_cephfs_ms_mode) | length) != 1 or
+        'mds_namespace=' in cephfs_fstab.stdout or
+        ('secretfile=/etc/ceph/ceph.client.' ~ expected_cephfs_client_ids[inventory_hostname] ~ '.secret') not in cephfs_fstab.stdout
+
+    - name: Require the new CephFS kernel mount source syntax
+      ansible.builtin.command:
+        argv: ["findmnt", "--fstab", "--target", "/mnt/molecule-cephfs", "--noheadings", "--output", "SOURCE"]
+      register: cephfs_source
+      changed_when: false
+      failed_when: cephfs_source.rc != 0 or cephfs_source.stdout != expected_cephfs_client_ids[inventory_hostname] ~ "@.molecule-cephfs=/"

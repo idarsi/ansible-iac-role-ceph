@@ -137,15 +137,15 @@
         OSD_VOLUME_POOL: "{{ osd_volume_pool }}"
       changed_when: false
 
-    - name: Create and attach only the two scenario-owned OSD volumes
+    - name: Create and attach only the three scenario-owned OSD volumes
       ansible.builtin.shell: |
         set -euo pipefail
-        for vm in ceph-b ceph-c; do
+        for vm in ceph-a ceph-b ceph-c; do
           volume="idarsi-ceph-${DISK_SUFFIX}-${vm}-osd.qcow2"
           domain="molecule-${vm}-${DISK_SUFFIX}"
           virsh --connect "$LIBVIRT_URI" vol-create-as --pool "$OSD_VOLUME_POOL" "$volume" 20G --format qcow2
           cat > "${MOLECULE_EPHEMERAL_DIRECTORY}/${vm}-osd.xml" <<EOF
-        <disk type='volume' device='disk'><driver name='qemu' type='qcow2'/><source pool='${OSD_VOLUME_POOL}' volume='${volume}'/><target dev='vdb' bus='virtio'/></disk>
+        <disk type='volume' device='disk'><driver name='qemu' type='qcow2'/><source pool='${OSD_VOLUME_POOL}' volume='${volume}'/><target dev='vdb' bus='virtio'/><serial>idarsi-${DISK_SUFFIX}-${vm#ceph-}</serial></disk>
         EOF
           virsh --connect "$LIBVIRT_URI" attach-device "$domain" "${MOLECULE_EPHEMERAL_DIRECTORY}/${vm}-osd.xml" --config --live
         done
@@ -157,3 +157,27 @@
         LIBVIRT_URI: "{{ molecule_config.driver.libvirt_uri | default('qemu:///system') }}"
         OSD_VOLUME_POOL: "{{ osd_volume_pool }}"
       changed_when: true
+
+    - name: Verify each intended OSD disk in live and persistent domain configurations
+      ansible.builtin.shell: |
+        set -euo pipefail
+        for vm in ceph-a ceph-b ceph-c; do
+          domain="molecule-${vm}-${DISK_SUFFIX}"
+          volume="idarsi-ceph-${DISK_SUFFIX}-${vm}-osd.qcow2"
+          for mode in live inactive; do
+            selector=()
+            if [[ "$mode" == inactive ]]; then selector=(--inactive); fi
+            domain_xml=$(virsh --connect "$LIBVIRT_URI" dumpxml "$domain" "${selector[@]}")
+            if ! python3 -c 'import sys, xml.etree.ElementTree as ET; root=ET.fromstring(sys.stdin.read()); matches=[d for d in root.findall("./devices/disk") if d.find("target") is not None and d.find("target").get("dev")=="vdb"]; source=matches[0].find("source") if len(matches)==1 else None; raise SystemExit(0 if len(matches)==1 and source is not None and source.get("pool")==sys.argv[1] and source.get("volume")==sys.argv[2] else 1)' "$OSD_VOLUME_POOL" "$volume" <<<"$domain_xml"; then
+                echo "Scenario disk attachment mismatch: domain=$domain configuration=$mode target=vdb expected pool=$OSD_VOLUME_POOL volume=$volume" >&2
+                exit 1
+              fi
+          done
+        done
+      args:
+        executable: /bin/bash
+      environment:
+        DISK_SUFFIX: "{{ disk_suffix }}"
+        LIBVIRT_URI: "{{ molecule_config.driver.libvirt_uri | default('qemu:///system') }}"
+        OSD_VOLUME_POOL: "{{ osd_volume_pool }}"
+      changed_when: false

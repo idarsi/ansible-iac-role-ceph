@@ -17,11 +17,20 @@
           - ceph_mock_log.stdout_lines | select('equalto', 'cephadm shell -- ceph orch host add ceph-c ceph-install-mock') | list | length == 1
           - ceph_mock_log.stdout_lines | select('equalto', 'cephadm shell -- ceph orch host ls --format json') | list | length == 8
           - ceph_mock_log.stdout_lines | select('match', '^device-inventory ceph-install-mock$') | list | length == 3
-          - ceph_mock_log.stdout_lines | select('equalto', 'cephadm shell -- ceph orch apply -i -') | list | length == 6
+          - ceph_mock_log.stdout_lines | select('equalto', 'cephadm shell -- ceph orch apply -i -') | list | length == 7
           - ceph_mock_log.stdout_lines | select('equalto', 'spec {"service_type":"mon","placement":{"hosts":["ceph-install-mock","ceph-b","ceph-c"]}}') | list | length == 2
           - ceph_mock_log.stdout_lines | select('equalto', 'spec {"service_type":"mgr","placement":{"hosts":["ceph-install-mock","ceph-b","ceph-c"]}}') | list | length == 2
+          - ceph_mock_log.stdout_lines | select('equalto', 'spec {"service_type":"mds","service_id":"test-fs","placement":{"count":2}}') | list | length == 1
           - ceph_mock_log.stdout_lines | select('match', '^spec \{"service_type":"osd","service_id":"device_[0-9a-f]{64}","placement":\{"hosts":\["ceph-install-mock"\]\},"spec":\{"data_devices":\{"paths":\["/dev/sdb"\]\}\}\}$') | list | length == 2
           - ceph_mock_log.stdout_lines | select('equalto', 'cephadm shell -- ceph osd pool create test-pool 16') | list | length == 1
+          - ceph_mock_log.stdout_lines | select('equalto', 'cephadm shell -- ceph fs volume create test-fs') | list | length == 1
+          - ceph_mock_log.stdout_lines | select('match', '^ceph mds stat poll 1$') | list | length == 1
+          - ceph_mock_log.stdout_lines | select('match', '^ceph mds stat poll 2$') | list | length == 1
+          - ceph_mock_log.stdout_lines | select('match', '^ceph mds stat poll 3$') | list | length == 1
+          - ceph_mock_log.stdout_lines | select('match', '^ceph mds stat poll ') | list | length == 3
+          - ceph_mock_log.stdout is not search('ceph mon dump')
+          - ceph_mock_log.stdout is not search('ceph auth get-or-create')
+          - ceph_mock_log.stdout is not search('ceph auth get-key')
           - ceph_mock_log.stdout_lines | select('equalto', 'host-add ceph-b ceph-install-mock') | list | length == 1
           - ceph_mock_log.stdout_lines | select('equalto', 'host-add ceph-c ceph-install-mock') | list | length == 1
     - name: "Read installed authorized key for declared peer user"

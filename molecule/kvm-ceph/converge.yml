@@ -4,6 +4,25 @@
   become: true
   gather_facts: false
   tasks:
+    - name: Wait for the scenario OSD disk to appear in each guest
+      ansible.builtin.shell: |
+        set -euo pipefail
+        udevadm settle --timeout=30
+        expected_serial="idarsi-{{ disk_suffix }}-{{ inventory_hostname | regex_replace('^ceph-', '') }}"
+        for attempt in $(seq 1 60); do
+          if test -b /dev/vdb && udevadm info --query=property --name=/dev/vdb | grep -Fxq "ID_SERIAL=${expected_serial}"; then
+            exit 0
+          fi
+          sleep 2
+        done
+        echo "Scenario disk attachment mismatch in guest {{ inventory_hostname }}: /dev/vdb is not the expected scenario-owned disk (serial=${expected_serial})" >&2
+        exit 1
+      args:
+        executable: /bin/bash
+      vars:
+        disk_suffix: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') | hash('sha256') | truncate(8, true, '') }}"
+      changed_when: false
+
     - name: Set guest hostname to its inventory name
       ansible.builtin.hostname:
         name: "{{ inventory_hostname }}"
@@ -31,10 +50,17 @@
         ssh_user: "molecule"
         allow_osd_provisioning: true
         osds:
+          - { host: "ceph-a", device: "/dev/vdb" }
           - { host: "ceph-b", device: "/dev/vdb" }
           - { host: "ceph-c", device: "/dev/vdb" }
         pools:
-          - { name: "molecule-integration", pg_num: 8 }
+          - { name: "molecule-integration", pg_num: 32 }
+        filesystems:
+          - { name: "molecule-cephfs", mds_count: 2 }
+        cephfs_clients:
+          - { host: "ceph-a", filesystem: "molecule-cephfs", mountpoint: "/mnt/molecule-cephfs", client_id: "molecule-mount-a" }
+          - { host: "ceph-b", filesystem: "molecule-cephfs", mountpoint: "/mnt/molecule-cephfs", client_id: "molecule-mount-b" }
+          - { host: "ceph-c", filesystem: "molecule-cephfs", mountpoint: "/mnt/molecule-cephfs", client_id: "molecule-mount-c" }
   tasks:
     - name: Run Ceph role integration convergence
       ansible.builtin.include_role:

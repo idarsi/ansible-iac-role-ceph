@@ -61,26 +61,47 @@
         OSD_VOLUME_POOL: "{{ osd_volume_pool }}"
       changed_when: false
 
-    - name: Attempt removal of only the two named OSD volumes and attachments
+    - name: Attempt removal of only the three named OSD volumes and attachments
       ansible.builtin.shell: |
         set -uo pipefail
         errors=()
         error_count=0
-        for vm in ceph-b ceph-c; do
+        if ! pool_volumes=$(virsh --connect "$LIBVIRT_URI" vol-list --pool "$OSD_VOLUME_POOL" \
+          | awk 'NR > 2 { print $1 }'); then
+          echo "list volumes in pool $OSD_VOLUME_POOL failed" >&2
+          exit 1
+        fi
+        for vm in ceph-a ceph-b ceph-c; do
           volume="idarsi-ceph-${DISK_SUFFIX}-${vm}-osd.qcow2"
           domain="molecule-${vm}-${DISK_SUFFIX}"
+          if ! grep -Fxq -- "$volume" <<<"$pool_volumes"; then
+            continue
+          fi
           if virsh --connect "$LIBVIRT_URI" dominfo "$domain" >/dev/null 2>&1; then
-            if ! block_devices=$(virsh --connect "$LIBVIRT_URI" domblklist --details "$domain"); then
-              errors+=("list block devices for $domain failed")
-              error_count=$((error_count + 1))
-              continue
-            fi
-            if grep -Eq '^[[:space:]]*file[[:space:]]+disk[[:space:]]+vdb[[:space:]]' <<<"$block_devices"; then
-              if ! virsh --connect "$LIBVIRT_URI" detach-disk "$domain" vdb --config --live; then
-                errors+=("detach disk vdb from $domain failed")
+            for mode in live inactive; do
+              selector=()
+              detach_mode=--live
+              if [[ "$mode" == inactive ]]; then
+                selector=(--inactive)
+                detach_mode=--config
+              fi
+              if ! domain_xml=$(virsh --connect "$LIBVIRT_URI" dumpxml "$domain" "${selector[@]}"); then
+                errors+=("read domain XML for $domain ($mode) failed")
+                error_count=$((error_count + 1))
+                continue
+              fi
+              python3 -c 'import sys, xml.etree.ElementTree as ET; root=ET.fromstring(sys.stdin.read()); matches=[d for d in root.findall("./devices/disk") if d.find("target") is not None and d.find("target").get("dev")=="vdb"]; source=matches[0].find("source") if len(matches)==1 else None; raise SystemExit(0 if not matches else 10 if len(matches)==1 and source is not None and source.get("pool")==sys.argv[1] and source.get("volume")==sys.argv[2] else 11)' "$OSD_VOLUME_POOL" "$volume" <<<"$domain_xml"
+              parse_rc=$?
+              if ((parse_rc == 10)); then
+                if ! virsh --connect "$LIBVIRT_URI" detach-disk "$domain" vdb "$detach_mode"; then
+                  errors+=("detach scenario-owned disk from $domain ($detach_mode) failed")
+                  error_count=$((error_count + 1))
+                fi
+              elif ((parse_rc != 0)); then
+                errors+=("unexpected or invalid domain XML attachment for $domain ($mode); refusing volume deletion")
                 error_count=$((error_count + 1))
               fi
-            fi
+            done
           fi
         done
         if ((error_count > 0)); then
@@ -111,18 +132,57 @@
       failed_when: false
       changed_when: true
 
-    - name: Remove only the two named OSD volumes after successful guest teardown
+    - name: Remove only the three named OSD volumes after successful guest teardown
       ansible.builtin.shell: |
         set -uo pipefail
         errors=()
         error_count=0
-        for vm in ceph-b ceph-c; do
+        if ! pool_volumes=$(virsh --connect "$LIBVIRT_URI" vol-list --pool "$OSD_VOLUME_POOL" \
+          | awk 'NR > 2 { print $1 }'); then
+          echo "list volumes in pool $OSD_VOLUME_POOL failed" >&2
+          exit 1
+        fi
+        if ! domains=$(virsh --connect "$LIBVIRT_URI" list --all --name); then
+          echo "list libvirt domains failed; refusing volume deletion" >&2
+          exit 1
+        fi
+        for vm in ceph-a ceph-b ceph-c; do
           volume="idarsi-ceph-${DISK_SUFFIX}-${vm}-osd.qcow2"
-          if virsh --connect "$LIBVIRT_URI" vol-info "$volume" --pool "$OSD_VOLUME_POOL" >/dev/null 2>&1; then
-            if ! virsh --connect "$LIBVIRT_URI" vol-delete "$volume" --pool "$OSD_VOLUME_POOL"; then
-              errors+=("delete volume $volume failed")
-              error_count=$((error_count + 1))
-            fi
+          if ! grep -Fxq -- "$volume" <<<"$pool_volumes"; then
+            continue
+          fi
+          attached=false
+          uncertain=false
+          while IFS= read -r domain; do
+            [[ -n "$domain" ]] || continue
+            for mode in live inactive; do
+              selector=()
+              [[ "$mode" == inactive ]] && selector=(--inactive)
+              if ! domain_xml=$(virsh --connect "$LIBVIRT_URI" dumpxml "$domain" "${selector[@]}"); then
+                errors+=("read domain XML for $domain ($mode) failed; refusing to delete $volume")
+                error_count=$((error_count + 1))
+                uncertain=true
+                continue
+              fi
+              python3 -c 'import sys, xml.etree.ElementTree as ET; root=ET.fromstring(sys.stdin.read()); raise SystemExit(10 if any((s := d.find("source")) is not None and s.get("pool")==sys.argv[1] and s.get("volume")==sys.argv[2] for d in root.findall("./devices/disk")) else 0)' "$OSD_VOLUME_POOL" "$volume" <<<"$domain_xml"
+              parse_rc=$?
+              if ((parse_rc == 10)); then
+                errors+=("volume $volume remains attached to domain $domain ($mode); refusing deletion")
+                error_count=$((error_count + 1))
+                attached=true
+              elif ((parse_rc != 0)); then
+                errors+=("invalid domain XML for $domain ($mode); refusing to delete $volume")
+                error_count=$((error_count + 1))
+                uncertain=true
+              fi
+            done
+          done <<<"$domains"
+          if [[ "$attached" == true || "$uncertain" == true ]]; then
+            continue
+          fi
+          if ! virsh --connect "$LIBVIRT_URI" vol-delete "$volume" --pool "$OSD_VOLUME_POOL"; then
+            errors+=("delete volume $volume failed")
+            error_count=$((error_count + 1))
           fi
         done
         if ((error_count > 0)); then
@@ -138,7 +198,9 @@
       register: disk_cleanup_retry
       failed_when: false
       changed_when: true
-      when: destroyed_guests.results | selectattr('rc', 'ne', 0) | list | length == 0
+      when:
+        - disk_cleanup.rc == 0
+        - destroyed_guests.results | selectattr('rc', 'ne', 0) | list | length == 0
 
     - name: Remove only this scenario's guest OS disks after successful guest teardown
       ansible.builtin.file:

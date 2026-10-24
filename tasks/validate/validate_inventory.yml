@@ -129,6 +129,34 @@
         == (iac_blueprint.ceph.pools | default([]) | selectattr('pg_num', 'defined') | list | length)
     fail_msg: "ceph.pools must contain unique non-empty names and positive integer pg_num values"
 
+- name: "Checking CephFS filesystem definitions"
+  ansible.builtin.assert:
+    that:
+      - iac_blueprint.ceph.filesystems | default([]) | type_debug == "list"
+      - (iac_blueprint.ceph.filesystems | default([]) | select('mapping') | list | length) == (iac_blueprint.ceph.filesystems | default([]) | length)
+      - (iac_blueprint.ceph.filesystems | default([]) | selectattr('name', 'defined') | list | length) == (iac_blueprint.ceph.filesystems | default([]) | length)
+      - (iac_blueprint.ceph.filesystems | default([]) | selectattr('name', 'string') | selectattr('name', 'match', '^[A-Za-z0-9_.-]+$') | list | length) == (iac_blueprint.ceph.filesystems | default([]) | length)
+      - (iac_blueprint.ceph.filesystems | default([]) | map(attribute='name') | unique | list | length) == (iac_blueprint.ceph.filesystems | default([]) | length)
+      - (iac_blueprint.ceph.filesystems | default([]) | selectattr('mds_count', 'defined') | selectattr('mds_count', 'integer') | selectattr('mds_count', 'gt', 0) | list | length) == (iac_blueprint.ceph.filesystems | default([]) | selectattr('mds_count', 'defined') | list | length)
+    fail_msg: "ceph.filesystems must contain unique filesystem names and optional positive integer mds_count values"
+
+- name: "Checking CephFS client mount definitions"
+  ansible.builtin.assert:
+    that:
+      - iac_blueprint.ceph.cephfs_clients | default([]) | type_debug == "list"
+      - (iac_blueprint.ceph.cephfs_clients | default([]) | select('mapping') | list | length) == (iac_blueprint.ceph.cephfs_clients | default([]) | length)
+      - (iac_blueprint.ceph.cephfs_clients | default([]) | selectattr('host', 'defined') | list | length) == (iac_blueprint.ceph.cephfs_clients | default([]) | length)
+      - (iac_blueprint.ceph.cephfs_clients | default([]) | selectattr('filesystem', 'defined') | list | length) == (iac_blueprint.ceph.cephfs_clients | default([]) | length)
+      - (iac_blueprint.ceph.cephfs_clients | default([]) | selectattr('mountpoint', 'defined') | list | length) == (iac_blueprint.ceph.cephfs_clients | default([]) | length)
+      - (iac_blueprint.ceph.cephfs_clients | default([]) | selectattr('client_id', 'defined') | list | length) == (iac_blueprint.ceph.cephfs_clients | default([]) | length)
+      - (iac_blueprint.ceph.cephfs_clients | default([]) | selectattr('host', 'in', groups['all']) | list | length) == (iac_blueprint.ceph.cephfs_clients | default([]) | length)
+      - (iac_blueprint.ceph.cephfs_clients | default([]) | selectattr('filesystem', 'in', (iac_blueprint.ceph.filesystems | default([]) | map(attribute='name') | list)) | list | length) == (iac_blueprint.ceph.cephfs_clients | default([]) | length)
+      - (iac_blueprint.ceph.cephfs_clients | default([]) | selectattr('mountpoint', 'string') | selectattr('mountpoint', 'match', '^/(mnt|media|srv)/[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*$') | list | length) == (iac_blueprint.ceph.cephfs_clients | default([]) | length)
+      - (iac_blueprint.ceph.cephfs_clients | default([]) | selectattr('client_id', 'string') | selectattr('client_id', 'match', '^[A-Za-z0-9_.-]+$') | list | length) == (iac_blueprint.ceph.cephfs_clients | default([]) | length)
+      - (iac_blueprint.ceph.cephfs_clients | default([]) | map(attribute='host') | zip(iac_blueprint.ceph.cephfs_clients | default([]) | map(attribute='mountpoint')) | map('join', '|') | unique | list | length) == (iac_blueprint.ceph.cephfs_clients | default([]) | length)
+      - (iac_blueprint.ceph.cephfs_clients | default([]) | map(attribute='client_id') | unique | list | length) == (iac_blueprint.ceph.cephfs_clients | default([]) | length)
+    fail_msg: "CephFS clients require unique host/mountpoint records, declared filesystems, valid inventory hosts and mountpoints below /mnt, /media, or /srv using safe path components"
+
 - name: "Checking bootstrap host selection before installation"
   ansible.builtin.assert:
     that:
