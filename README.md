@@ -1,6 +1,6 @@
-> **Maturity State: Beta**  
-> **RC Readiness: 81%**  
-> **Assessment ref:** commit `a607c7f63ba2e93761ea94ed03e1025d8bc4fe7d` on `update/cephfs-support`  
+> **Maturity State: Beta**<br>
+> **RC Readiness: 81%**<br>
+> **Assessment ref:** `update/ceph-kvm-molecule-schema` at `a87b6e56c4ed20eb63558a17664f905d0da3eb53`, including the uncommitted KVM Molecule schema change.
 
 ANSIBLE-IAC-ROLE-CEPH
 ===============================
