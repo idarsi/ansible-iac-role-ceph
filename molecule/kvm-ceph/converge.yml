@@ -62,6 +62,50 @@
           - { host: "ceph-b", filesystem: "molecule-cephfs", mountpoint: "/mnt/molecule-cephfs", client_id: "molecule-mount-b" }
           - { host: "ceph-c", filesystem: "molecule-cephfs", mountpoint: "/mnt/molecule-cephfs", client_id: "molecule-mount-c" }
   tasks:
-    - name: Run Ceph role integration convergence
+    - name: Exercise recovery after a controlled late install failure
+      block:
+        - name: Install a scenario-local cephadm host-add interceptor
+          ansible.builtin.copy:
+            dest: /usr/local/bin/cephadm
+            owner: root
+            group: root
+            mode: "0755"
+            content: |
+              #!/bin/bash
+              set -euo pipefail
+              if [[ "$#" -ge 7 && "$1" == shell && "$2" == -- && "$3" == ceph && "$4" == orch && "$5" == host && "$6" == add ]]; then
+                printf '%s\n' "$*" >> /var/tmp/idarsi-cephadm-intercept.log
+                exit 73
+              fi
+              exec /usr/sbin/cephadm "$@"
+
+        - name: Run first valid install and inject failure at host registration
+          ansible.builtin.include_role:
+            name: "{{ playbook_dir }}/../.."
+      rescue:
+        - name: Require failure from the injected host-add command
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.rc == 73
+              - ansible_failed_result.cmd is search('host add')
+            fail_msg: "The controlled recovery attempt failed for an unexpected reason."
+
+        - name: Verify bootstrap sentinel, SSH key, and wrapper invocation
+          ansible.builtin.shell: |
+            set -euo pipefail
+            test -s /etc/ceph/ceph.conf
+            test -s /etc/ceph/ceph.pub
+            test -s /var/tmp/idarsi-cephadm-intercept.log
+          args:
+            executable: /bin/bash
+          changed_when: false
+
+      always:
+        - name: Remove scenario-local cephadm wrapper
+          ansible.builtin.file:
+            path: /usr/local/bin/cephadm
+            state: absent
+
+    - name: Run identical valid Ceph role install after recovery
       ansible.builtin.include_role:
         name: "{{ playbook_dir }}/../.."

@@ -33,7 +33,7 @@ Supported platforms
 
 | Operating system                  | Supported versions                | Automated test coverage                   |
 |-----------------------------------|-----------------------------------|-------------------------------------------|
-| Rocky Linux                       | 9, 10 (role platform gate)        | Rocky 9 validation container only; live cluster and support unverified. Rocky 10 install-mock container and Tentacle 20.2.4 KVM integration sequence passed; this is not general support evidence. |
+| Rocky Linux                       | 9, 10 (role platform gate)        | Rocky 9 validation container only; a Rocky 9 ISO may be used with the manual KVM scenario, but no run is recorded. Rocky 10 install-mock and Tentacle 20.2.4 KVM sequence passed; not general support evidence. |
 
 Supported states
 ----------------

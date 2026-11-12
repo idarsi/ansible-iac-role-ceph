@@ -110,8 +110,13 @@ named ephemeral OSD volumes in the active `idarsi-test-bases` pool
 (override with `IDARSI_CEPH_OSD_VOLUME_POOL` if needed); it removes those
 volumes and the three shared-lifecycle guests at teardown. Never run it against valuable VMs
 or storage. Rocky 10 has passed this sequence; Rocky 9 live-cluster behavior has not been
-tested. A Rocky 9 ISO can be substituted for a compatibility attempt, but Rocky 9 is not
-yet supported or verified for this live-cluster test. Shared environment setup and state
+tested. A Rocky 9 run is reproducible using the same scenario and shared
+`rocky9-10.ks.tmpl`: set `IDARSI_TEST_KVM_INSTALL_SOURCE` to a Rocky 9 DVD ISO
+and run `molecule test -s kvm-ceph`. For example:
+`IDARSI_TEST_KVM_INSTALL_SOURCE=/var/lib/libvirt/images/Rocky-9.6-x86_64-dvd.iso molecule test -s kvm-ceph`.
+Run Rocky 9 and Rocky 10 full scenarios sequentially, changing the ISO path
+between runs; one invocation selects one ISO. This defines a reproducible test
+target, not a passing result or verified live-cluster support. Shared environment setup and state
 can differ between runs; confirm disposable guests/storage and required shared network/pool
 before execution.
 
