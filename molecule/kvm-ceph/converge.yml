@@ -89,7 +89,7 @@
             content: |
               #!/bin/bash
               set -euo pipefail
-              if [[ "$#" -eq 9 && "$1" == shell && "$2" == -- && "$3" == ceph && "$4" == orch && "$5" == host && "$6" == add ]]; then
+              if [[ "$#" -eq 8 && "$1" == shell && "$2" == -- && "$3" == ceph && "$4" == orch && "$5" == host && "$6" == add ]]; then
                 printf '%s\n' "$@" >> /var/tmp/idarsi-cephadm-intercept.log
                 exit 73
               fi
