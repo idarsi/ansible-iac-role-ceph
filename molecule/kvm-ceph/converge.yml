@@ -78,7 +78,7 @@
           ansible.builtin.file:
             path: /var/tmp/idarsi-ceph-host-add-interceptor
             state: directory
-            mode: "0755"
+            mode: "0700"
 
         - name: Install a scenario-local cephadm host-add interceptor
           ansible.builtin.copy:
@@ -90,7 +90,7 @@
               #!/bin/bash
               set -euo pipefail
               if [[ "$#" -eq 8 && "$1" == shell && "$2" == -- && "$3" == ceph && "$4" == orch && "$5" == host && "$6" == add ]]; then
-                printf '%s\n' "$@" >> /var/tmp/idarsi-cephadm-intercept.log
+                printf '%s\n' "$@" >> /var/tmp/idarsi-ceph-host-add-interceptor/intercept.log
                 exit 73
               fi
               exec /usr/sbin/cephadm "$@"
@@ -115,7 +115,7 @@
             set -euo pipefail
             test -s /etc/ceph/ceph.conf
             test -s /etc/ceph/ceph.pub
-            test -s /var/tmp/idarsi-cephadm-intercept.log
+            test -s /var/tmp/idarsi-ceph-host-add-interceptor/intercept.log
           args:
             executable: /bin/bash
           changed_when: false
