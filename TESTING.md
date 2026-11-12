@@ -108,7 +108,7 @@ on systemd hosts. Undeclared inventory hosts are not targeted. The scenario
 uses static addresses `.21`–`.23` on the shared NAT network and creates three
 named ephemeral OSD volumes in the active `idarsi-test-bases` pool
 (override with `IDARSI_CEPH_OSD_VOLUME_POOL` if needed); it removes those
-volumes and the three shared-lifecycle guests at teardown. Never run it against valuable VMs
+volumes and the three shared-lifecycle guests at teardown. Destroy asserts the scenario guests and OSD volumes are absent while the shared network, configured pool, and base-image directory remain available. Recovery injects one failed `cephadm` host-add command via a scenario-specific temporary `PATH` entry for only the first role invocation; it checks the exact command argv and exit code, then retries with the normal `PATH` and unchanged valid blueprint. The wrapper and directory are scenario-owned and always removed; host `cephadm` binaries are never overwritten or deleted. Never run it against valuable VMs
 or storage. Rocky 10 has passed this sequence; Rocky 9 live-cluster behavior has not been
 tested. A Rocky 9 run is reproducible using the same scenario and shared
 `rocky9-10.ks.tmpl`: set `IDARSI_TEST_KVM_INSTALL_SOURCE` to a Rocky 9 DVD ISO

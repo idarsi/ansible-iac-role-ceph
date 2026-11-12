@@ -64,30 +64,50 @@
   tasks:
     - name: Exercise recovery after a controlled late install failure
       block:
+        - name: Check scenario interceptor directory is not pre-existing
+          ansible.builtin.stat:
+            path: /var/tmp/idarsi-ceph-host-add-interceptor
+          register: ceph_interceptor_dir
+
+        - name: Require interceptor directory to be scenario-owned
+          ansible.builtin.assert:
+            that:
+              - not ceph_interceptor_dir.stat.exists
+
+        - name: Create scenario-specific interceptor directory
+          ansible.builtin.file:
+            path: /var/tmp/idarsi-ceph-host-add-interceptor
+            state: directory
+            mode: "0755"
+
         - name: Install a scenario-local cephadm host-add interceptor
           ansible.builtin.copy:
-            dest: /usr/local/bin/cephadm
+            dest: /var/tmp/idarsi-ceph-host-add-interceptor/cephadm
             owner: root
             group: root
             mode: "0755"
             content: |
               #!/bin/bash
               set -euo pipefail
-              if [[ "$#" -ge 7 && "$1" == shell && "$2" == -- && "$3" == ceph && "$4" == orch && "$5" == host && "$6" == add ]]; then
-                printf '%s\n' "$*" >> /var/tmp/idarsi-cephadm-intercept.log
+              if [[ "$#" -eq 9 && "$1" == shell && "$2" == -- && "$3" == ceph && "$4" == orch && "$5" == host && "$6" == add ]]; then
+                printf '%s\n' "$@" >> /var/tmp/idarsi-cephadm-intercept.log
                 exit 73
               fi
               exec /usr/sbin/cephadm "$@"
 
         - name: Run first valid install and inject failure at host registration
-          ansible.builtin.include_role:
-            name: "{{ playbook_dir }}/../.."
+          block:
+            - name: Run role install with the scenario-local interceptor first in PATH
+              ansible.builtin.include_role:
+                name: "{{ playbook_dir }}/../.."
+          environment:
+            PATH: "/var/tmp/idarsi-ceph-host-add-interceptor:{{ ansible_env.PATH }}"
       rescue:
         - name: Require failure from the injected host-add command
           ansible.builtin.assert:
             that:
               - ansible_failed_result.rc == 73
-              - ansible_failed_result.cmd is search('host add')
+              - ansible_failed_result.argv == ['cephadm', 'shell', '--', 'ceph', 'orch', 'host', 'add', 'ceph-b', '192.168.250.22']
             fail_msg: "The controlled recovery attempt failed for an unexpected reason."
 
         - name: Verify bootstrap sentinel, SSH key, and wrapper invocation
@@ -103,7 +123,7 @@
       always:
         - name: Remove scenario-local cephadm wrapper
           ansible.builtin.file:
-            path: /usr/local/bin/cephadm
+            path: /var/tmp/idarsi-ceph-host-add-interceptor
             state: absent
 
     - name: Run identical valid Ceph role install after recovery

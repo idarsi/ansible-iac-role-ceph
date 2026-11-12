@@ -222,6 +222,43 @@
           stderr={{ disk_cleanup_retry.stderr | default('') }};
           guest cleanup failures={{ destroyed_guests.results | selectattr('rc', 'ne', 0) | map(attribute='stderr') | list }}
 
+    - name: Assert scenario guests are absent after destruction
+      ansible.builtin.command:
+        argv: ["virsh", "--connect", "{{ molecule_config.driver.libvirt_uri | default('qemu:///system') }}", "dominfo", "molecule-{{ item }}-{{ suffix }}"]
+      loop: ["ceph-a", "ceph-b", "ceph-c"]
+      register: remaining_scenario_guests
+      changed_when: false
+      failed_when: false
+
+    - name: Assert scenario OSD volumes are absent after destruction
+      ansible.builtin.command:
+        argv: ["virsh", "--connect", "{{ molecule_config.driver.libvirt_uri | default('qemu:///system') }}", "vol-info", "idarsi-ceph-{{ suffix }}-{{ item }}-osd.qcow2", "--pool", "{{ osd_volume_pool }}"]
+      loop: ["ceph-a", "ceph-b", "ceph-c"]
+      register: remaining_osd_volumes
+      changed_when: false
+      failed_when: false
+
+    - name: Assert shared test network and configured OSD pool remain active
+      ansible.builtin.shell: |
+        set -euo pipefail
+        virsh --connect "$LIBVIRT_URI" net-info idarsi-test | grep -Eq '^Active:[[:space:]]+yes$'
+        virsh --connect "$LIBVIRT_URI" pool-info "$OSD_VOLUME_POOL" | grep -Eq '^State:[[:space:]]+running$'
+        test -d "$KVM_BASE_DIR"
+      args:
+        executable: /bin/bash
+      environment:
+        LIBVIRT_URI: "{{ molecule_config.driver.libvirt_uri | default('qemu:///system') }}"
+        OSD_VOLUME_POOL: "{{ osd_volume_pool }}"
+        KVM_BASE_DIR: "{{ kvm_base_dir }}"
+      changed_when: false
+
+    - name: Require scenario-owned resources to be absent
+      ansible.builtin.assert:
+        that:
+          - remaining_scenario_guests.results | selectattr('rc', 'eq', 0) | list | length == 0
+          - remaining_osd_volumes.results | selectattr('rc', 'eq', 0) | list | length == 0
+        fail_msg: "A scenario guest or OSD volume remains after destroy."
+
     - name: Remove temporary SSH credentials after successful guest cleanup
       ansible.builtin.file:
         path: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/{{ item }}"
