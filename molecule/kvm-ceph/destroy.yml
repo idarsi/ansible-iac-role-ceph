@@ -241,8 +241,10 @@
     - name: Assert shared test network and configured OSD pool remain active
       ansible.builtin.shell: |
         set -euo pipefail
-        virsh --connect "$LIBVIRT_URI" net-info idarsi-test | grep -Eq '^Active:[[:space:]]+yes$'
-        virsh --connect "$LIBVIRT_URI" pool-info "$OSD_VOLUME_POOL" | grep -Eq '^State:[[:space:]]+running$'
+        net_info=$(virsh --connect "$LIBVIRT_URI" net-info idarsi-test)
+        grep -Eq '^Active:[[:space:]]+yes$' <<<"$net_info"
+        pool_info=$(virsh --connect "$LIBVIRT_URI" pool-info "$OSD_VOLUME_POOL")
+        grep -Eq '^State:[[:space:]]+running$' <<<"$pool_info"
         test -d "$KVM_BASE_DIR"
       args:
         executable: /bin/bash
