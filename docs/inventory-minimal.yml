@@ -3,5 +3,11 @@ all:
   hosts:
     ceph-a:
       ansible_host: "192.0.2.10"
+    ceph-b:
+      ansible_host: "192.0.2.11"
+    ceph-c:
+      ansible_host: "192.0.2.12"
+    ceph-osd-a:
+      ansible_host: "192.0.2.13"
     ceph-client-a:
       ansible_host: "192.0.2.20"

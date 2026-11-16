@@ -1,10 +1,12 @@
-> **Maturity State: Beta**<br>
-> **RC Readiness: 81%**<br>
-> **Assessment ref:** `update/ceph-kvm-molecule-schema` at `a87b6e56c4ed20eb63558a17664f905d0da3eb53`, including the uncommitted KVM Molecule schema change.
+> **Maturity State: Beta**
+>
+> **RC Readiness: 85%**
+>
+> **Assessment ref:** `update/ceph-kvm-recovery-tests` (this change, based on `ba0b270`; supervised evidence from 2026-11-16). The 85% Beta reassessment includes supervised Rocky 9 and 10 KVM recovery sequences with scoped cleanup and validation-only verification of the linked example. See [TESTING.md](TESTING.md) for evidence and limitations.
 
 ANSIBLE-IAC-ROLE-CEPH
 ===============================
-**COPYRIGHT** ^(ida|arsi)$ collective
+**COPYRIGHT** 2026 ^(ida|arsi)$ collective
 **LICENSE** MIT Licence [LICENSE](LICENSE)
 **AUTHORS**
 - Arsi Atomi <arsi@atomi.sh>
@@ -33,7 +35,7 @@ Supported platforms
 
 | Operating system                  | Supported versions                | Automated test coverage                   |
 |-----------------------------------|-----------------------------------|-------------------------------------------|
-| Rocky Linux                       | 9, 10 (role platform gate)        | Rocky 9 validation container only; a Rocky 9 ISO may be used with the manual KVM scenario, but no run is recorded. Rocky 10 install-mock and Tentacle 20.2.4 KVM sequence passed; not general support evidence. |
+| Rocky Linux                       | 9, 10 (role platform gate)        | Supervised three-node Tentacle 20.2.4 KVM recovery sequences passed on Rocky 9 and 10; Podman validation (Rocky 9) and mock install (Rocky 10) passed historically under former scenario names. Scoped integration evidence, not production certification. |
 
 Supported states
 ----------------
@@ -58,7 +60,7 @@ Control node
 
 Target host
 
-- Rocky Linux 9 or 10 with network connectivity and sudo/root privileges. On the bootstrap host, install converges Podman, LVM2, Chrony, Python 3, and the official pinned Tentacle 20.2.4 cephadm executable (download.ceph.com RPM release path for EL9). Rocky 10 compatibility of that upstream EL9 cephadm binary remains unverified.
+- Rocky Linux 9 or 10 with network connectivity and sudo/root privileges. On the bootstrap host, install converges Podman, LVM2, Chrony, Python 3, and the official pinned Tentacle 20.2.4 cephadm executable (download.ceph.com RPM release path for EL9). The upstream EL9 cephadm binary worked in the scoped Rocky 10 KVM run; broader Rocky 10 compatibility remains unverified.
 - Bootstrap pins the daemon container to `quay.io/ceph/ceph:v20.2.4` (Tentacle), installed cephadm must report a parseable version with major version 20 or newer and matching major version 20.
 - Bootstrap host must have `ansible_host`; cluster network must be provided.
 - The role passes `ceph.ssh_user` to bootstrap (default: `root`), then installs only the Ceph bootstrap public key (`/etc/ceph/ceph.pub`) for that account on declared monitor and OSD hosts before host registration. The account must have passwordless sudo on each peer; non-root users are supported. The role never reads or distributes the private key.
@@ -77,6 +79,7 @@ iac_blueprint:
     cluster_name: "ceph"
     monitors: ["ceph-a", "ceph-b", "ceph-c"]
     cluster_network: "10.20.0.0/24"
+    allow_osd_provisioning: true  # Explicit opt-in; use only disposable, independently verified devices.
     osds:
       - { host: "ceph-osd-a", device: "/dev/sdb" }
     pools: []
@@ -142,4 +145,4 @@ cephfs_clients:
 
 Every OSD host must also be present in Ansible inventory. Such hosts may be OSD-only and need not appear in `monitors`; the role registers the union of monitor and declared OSD hosts with the orchestrator. OSD specifications omitted from a later blueprint are not automatically removed; removal must be managed explicitly through Ceph.
 
-Only use install in a disposable, reviewed environment after testing cephadm behavior manually. Target only the first host in `monitors`; bootstrap is guarded by `/etc/ceph/ceph.conf`. Bootstrap necessarily precedes the live existing-pool `pg_num` check because that check requires Ceph CLI access; consequently a pool conflict on a clean host can fail after the cluster has been bootstrapped. Pool conflicts fail rather than being changed. The role then registers monitor/OSD hosts, waits (up to 60 seconds) for registration, and checks orchestrator device inventory before applying any monitor, manager, or OSD daemon specs. Host registration intentionally precedes device inventory because newly registered OSD hosts must be visible to `ceph orch device ls`; therefore a rejected device can leave those hosts registered, but no daemon/OSD specs are applied. The inventory check is a fail-closed snapshot advisory only: inventory can change immediately after it is read (TOCTOU), it does not guarantee device safety, and it does not wipe devices. Specifications report `changed: false`, not actual cluster change state. In the Rocky 10 Tentacle 20.2.4 KVM scenario, the observed three-monitor quorum and active-plus-standby manager checks passed. Sustained HA, failover, and recovery (including recovery after partial application) remain unverified. Do not use for production clusters. See [the maturity roadmap](docs/ROADMAP.md) for evidence gates.
+Only use install in a disposable, reviewed environment after testing cephadm behavior manually. Target only the first host in `monitors`; bootstrap is guarded by `/etc/ceph/ceph.conf`. Bootstrap necessarily precedes the live existing-pool `pg_num` check because that check requires Ceph CLI access; consequently a pool conflict on a clean host can fail after the cluster has been bootstrapped. Pool conflicts fail rather than being changed. The role then registers monitor/OSD hosts, waits (up to 60 seconds) for registration, and checks orchestrator device inventory before applying any monitor, manager, or OSD daemon specs. Host registration intentionally precedes device inventory because newly registered OSD hosts must be visible to `ceph orch device ls`; therefore a rejected device can leave those hosts registered, but no daemon/OSD specs are applied. The inventory check is a fail-closed snapshot advisory only: inventory can change immediately after it is read (TOCTOU), it does not guarantee device safety, and it does not wipe devices. Specifications report `changed: false`, not actual cluster change state. The historical Rocky 10 Tentacle 20.2.4 KVM scenario verified three-monitor quorum and an active-plus-standby manager. Subsequent supervised Rocky 9 and 10 KVM runs verified recovery from one injected `ceph-b` host-add failure by retrying the unchanged blueprint. Recovery from arbitrary failures or interruptions, sustained HA, and failover remain unverified. Do not use for production clusters. See [the maturity roadmap](docs/ROADMAP.md) for evidence gates.

@@ -1,71 +1,57 @@
 ---
-scenario:
-  name: kvm-ceph
-  test_sequence:
-    - destroy
-    - syntax
-    - create
-    - converge
-    - verify
-    - converge
-    - verify
-    - destroy
 dependency:
-  name: galaxy
-  options:
-    requirements-file: requirements.yml
+  name: shell
+  command: "molecule/kvm-ceph/install-collections"
 
 driver:
   name: default
+  options:
+    managed: true
 
 platforms:
   - name: ceph-a
     install_source: "${IDARSI_TEST_KVM_INSTALL_SOURCE}"
-    kickstart: "${IDARSI_TEST_ENVIRONMENT}/examples/molecule-kvm/rocky9-10.ks.tmpl"
-    ipv4_address: "192.168.250.21"
-    network: "idarsi-test"
+    kickstart: "rocky9-10.ks.tmpl"
     memory_mb: 6144
     vcpus: 2
     disk_size_gb: 30
     install_timeout: 3600
     ssh_user: molecule
+    data_disks:
+      - { name: "osd1", size_gb: 20 }
   - name: ceph-b
     install_source: "${IDARSI_TEST_KVM_INSTALL_SOURCE}"
-    kickstart: "${IDARSI_TEST_ENVIRONMENT}/examples/molecule-kvm/rocky9-10.ks.tmpl"
-    ipv4_address: "192.168.250.22"
-    network: "idarsi-test"
+    kickstart: "rocky9-10.ks.tmpl"
     memory_mb: 6144
     vcpus: 2
     disk_size_gb: 30
     install_timeout: 3600
     ssh_user: molecule
+    data_disks:
+      - { name: "osd1", size_gb: 20 }
   - name: ceph-c
     install_source: "${IDARSI_TEST_KVM_INSTALL_SOURCE}"
-    kickstart: "${IDARSI_TEST_ENVIRONMENT}/examples/molecule-kvm/rocky9-10.ks.tmpl"
-    ipv4_address: "192.168.250.23"
-    network: "idarsi-test"
+    kickstart: "rocky9-10.ks.tmpl"
     memory_mb: 6144
     vcpus: 2
     disk_size_gb: 30
     install_timeout: 3600
     ssh_user: molecule
+    data_disks:
+      - { name: "osd1", size_gb: 20 }
 
 provisioner:
   env:
+    ANSIBLE_SSH_ARGS: "-F /dev/null -o ControlMaster=no -o ControlPath=none -o ControlPersist=no"
     ANSIBLE_FILTER_PLUGINS: "${MOLECULE_PROJECT_DIRECTORY}/filter_plugins"
-    IDARSI_CEPH_KVM_DISPOSABLE: "YES_I_WILL_DESTROY_THESE_VMS_AND_DISKS"
+    ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_EPHEMERAL_DIRECTORY}/collections:${ANSIBLE_COLLECTIONS_PATH}"
   name: ansible
+  config_options:
+    ssh_connection:
+      ssh_args: "-F /dev/null -o ControlMaster=no -o ControlPath=none -o ControlPersist=no"
   playbooks:
-    create: create.yml
-    destroy: destroy.yml
-  inventory:
-    host_vars:
-      ceph-a:
-        ansible_host: "192.168.250.21"
-      ceph-b:
-        ansible_host: "192.168.250.22"
-      ceph-c:
-        ansible_host: "192.168.250.23"
+    create: "${IDARSI_TEST_ENVIRONMENT}/molecule/managed/create.yml"
+    destroy: "${IDARSI_TEST_ENVIRONMENT}/molecule/managed/destroy.yml"
 
 verifier:
   name: ansible

@@ -1,47 +1,19 @@
 ---
-- name: Verify shared OSD volume pool remains active
-  hosts: localhost
-  connection: local
+- name: Verify recovery completed on the managed guest
+  hosts: ceph-a
+  become: true
   gather_facts: false
-  vars:
-    molecule_config: "{{ lookup('file', lookup('env', 'MOLECULE_FILE')) | from_yaml }}"
-    disk_suffix: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') | hash('sha256') | truncate(8, true, '') }}"
-    osd_volume_pool: "{{ lookup('env', 'IDARSI_CEPH_OSD_VOLUME_POOL') | default('idarsi-test-bases', true) }}"
   tasks:
-    - name: Validate OSD volume pool name
+    - name: Require the controlled failure and retry to have succeeded
+      ansible.builtin.stat:
+        path: /var/lib/idarsi-ceph-recovery-complete
+      register: recovery_complete
+
+    - name: Reject a missing recovery marker
       ansible.builtin.assert:
         that:
-          - osd_volume_pool is string
-          - osd_volume_pool | length > 0
-          - osd_volume_pool is match('^[A-Za-z0-9_.-]+$')
-        fail_msg: "IDARSI_CEPH_OSD_VOLUME_POOL must be a non-empty libvirt pool name containing only letters, digits, underscores, dots, or hyphens."
-
-    - name: Require the configured OSD volume pool to be active
-      ansible.builtin.shell: |
-        set -euo pipefail
-        pool_info=$(virsh --connect "$LIBVIRT_URI" pool-info "$OSD_VOLUME_POOL")
-        [[ "$pool_info" =~ State:[[:space:]]+running([[:space:]]|$) ]]
-      args:
-        executable: /bin/bash
-      environment:
-        LIBVIRT_URI: "{{ molecule_config.driver.libvirt_uri | default('qemu:///system') }}"
-        OSD_VOLUME_POOL: "{{ osd_volume_pool }}"
-      changed_when: false
-
-    - name: Require all scenario-owned OSD volumes in the configured pool
-      ansible.builtin.shell: |
-        set -euo pipefail
-        for vm in ceph-a ceph-b ceph-c; do
-          volume="idarsi-ceph-${DISK_SUFFIX}-${vm}-osd.qcow2"
-          virsh --connect "$LIBVIRT_URI" vol-info --pool "$OSD_VOLUME_POOL" "$volume" >/dev/null
-        done
-      args:
-        executable: /bin/bash
-      environment:
-        LIBVIRT_URI: "{{ molecule_config.driver.libvirt_uri | default('qemu:///system') }}"
-        OSD_VOLUME_POOL: "{{ osd_volume_pool }}"
-        DISK_SUFFIX: "{{ disk_suffix }}"
-      changed_when: false
+          - recovery_complete.stat.isreg | default(false)
+        fail_msg: "Controlled Ceph host-add failure and successful retry were not recorded."
 
 - name: Verify real Ceph cluster convergence
   hosts: ceph-a
@@ -181,9 +153,18 @@
         fail_msg: "CephFS client capability verification failed."
       no_log: true
 
-    - name: Write a unique probe into CephFS from the first node
+    - name: Generate an opaque cross-node CephFS probe token
+      ansible.builtin.command:
+        argv: ["python3", "-c", "import secrets; print(secrets.token_hex(16))"]
+      delegate_to: localhost
+      become: false
+      run_once: true
+      register: cephfs_probe_token
+      changed_when: false
+
+    - name: Write the opaque probe into CephFS from the first node
       ansible.builtin.copy:
-        content: "molecule-cephfs-visible-{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}"
+        content: "{{ cephfs_probe_token.stdout }}"
         dest: /mnt/molecule-cephfs/molecule-cross-node-probe
         mode: "0644"
       delegate_to: ceph-a
@@ -193,7 +174,7 @@
         argv: ["cat", "/mnt/molecule-cephfs/molecule-cross-node-probe"]
       register: cephfs_probe
       changed_when: false
-      failed_when: cephfs_probe.rc != 0 or not cephfs_probe.stdout.startswith('molecule-cephfs-visible-')
+      failed_when: cephfs_probe.rc != 0 or cephfs_probe.stdout != cephfs_probe_token.stdout
 
     - name: Require the scenario CephFS mount to be persistent
       ansible.builtin.command:
