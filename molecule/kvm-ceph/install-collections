@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+"""Install scenario collections only inside a validated supervised run."""
+
+import json
+import os
+from pathlib import Path
+import pwd
+import re
+import stat
+import subprocess
+import sys
+import uuid
+
+
+def private_directory(path: Path) -> None:
+    """Reject links, foreign owners and writable or substituted run directories."""
+    info = path.lstat()
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
+            or stat.S_IMODE(info.st_mode) != 0o700):
+        raise ValueError(f"Untrusted run directory: {path}")
+
+
+def check_existing_tree(root: Path) -> None:
+    """Never let Galaxy follow an existing link or overwrite a foreign inode."""
+    pending = [root]
+    count = 0
+    while pending:
+        directory = pending.pop()
+        for child in directory.iterdir():
+            count += 1
+            if count > 20000:
+                raise ValueError("Collections tree is unexpectedly large")
+            info = child.lstat()
+            if info.st_uid != os.getuid() or (
+                not stat.S_ISDIR(info.st_mode) and
+                (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1)
+            ):
+                raise ValueError(f"Untrusted collections entry: {child}")
+            if stat.S_ISDIR(info.st_mode):
+                if stat.S_IMODE(info.st_mode) & 0o022:
+                    raise ValueError(f"Writable collections directory: {child}")
+                pending.append(child)
+
+
+def validated_destination(env: dict, home: Path, role: Path) -> Path:
+    """Require the exact trusted journal and disposable path before any install."""
+    run_id = env.get("IDARSI_RUN_ID", "")
+    if not re.fullmatch(r"[0-9a-f-]{36}", run_id) or str(uuid.UUID(run_id)) != run_id:
+        raise ValueError("Missing or invalid managed run ID")
+    state = home / ".idarsi-test-runs"
+    run = state / run_id
+    expected = state / ".work" / run_id / "ephemeral"
+    raw = env.get("MOLECULE_EPHEMERAL_DIRECTORY", "")
+    if not raw or not Path(raw).is_absolute() or raw != str(expected):
+        raise ValueError("Ephemeral directory must be this supervised run's private path")
+    if Path.cwd().resolve() != role.resolve():
+        raise ValueError("Install collections only from the role checkout")
+    for directory in (state, run, state / ".work", expected.parent, expected):
+        private_directory(directory)
+    manifest_path = run / "manifest.json"
+    info = manifest_path.lstat()
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+            or stat.S_IMODE(info.st_mode) != 0o600):
+        raise ValueError("Untrusted managed run manifest")
+    with manifest_path.open(encoding="utf-8") as stream:
+        manifest = json.load(stream)
+    if (manifest.get("id") != run_id or manifest.get("uid") != os.getuid()
+            or manifest.get("backend") != "kvm" or manifest.get("scenario") != "kvm-ceph"
+            or manifest.get("status") != "running" or manifest.get("role") != str(role.resolve())):
+        raise ValueError("Managed run manifest does not authorize this scenario")
+    destination = expected / "collections"
+    try:
+        destination.mkdir(mode=0o700)
+    except FileExistsError:
+        pass
+    private_directory(destination)
+    check_existing_tree(destination)
+    return destination
+
+
+def main() -> int:
+    role = Path(__file__).resolve().parents[2]
+    try:
+        destination = validated_destination(
+            os.environ, Path(pwd.getpwuid(os.getuid()).pw_dir), role,
+        )
+        inherited = os.environ.get("ANSIBLE_COLLECTIONS_PATH", "")
+        galaxy_env = dict(
+            os.environ,
+            ANSIBLE_COLLECTIONS_PATH=str(destination) + (":" + inherited if inherited else ""),
+        )
+        subprocess.run(
+            ["ansible-galaxy", "collection", "install", "-r",
+             "molecule/kvm-ceph/requirements.yml", "--collections-path",
+            str(destination), "--force"],
+            check=True,
+            env=galaxy_env,
+        )
+    except (ValueError, OSError, KeyError, json.JSONDecodeError,
+            subprocess.CalledProcessError) as error:
+        print(f"Refusing unsafe or failed managed Galaxy install: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

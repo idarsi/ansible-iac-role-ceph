@@ -2,24 +2,24 @@
 
 ## Current reassessment
 
-This assessment is for commit
-`a607c7f63ba2e93761ea94ed03e1025d8bc4fe7d` on branch
-`update/cephfs-support`. This role is **Beta / 81% RC Readiness**.
+The reassessment of `update/ceph-kvm-recovery-tests` (this change, based on
+`ba0b270`; supervised evidence from 2026-11-16) is **Beta / 85% RC
+Readiness**. The linked example passed local validation-only verification.
 The score is an engineering evidence score, not a production-suitability rating.
-The scorecard below records current evidence and the gates required for full
-RC readiness; planned work earns no points.
+The scorecard includes both supervised Rocky 9 and Rocky 10 runs; planned work
+earns no points.
 
 | Score area | Maximum | Current | Evidence and gap |
 |---|---:|---:|---|
-| Scope and public contract | 12 | 10 | Blueprint, states, inputs, and test matrix are documented; broader platform/dependency support remains unverified. |
-| Functional completeness | 20 | 17 | Rocky 10 KVM evidence verifies the principal live CephFS workflow; lifecycle transitions, Rocky 9 live behavior, and failure/recovery remain unverified. |
-| Validation and safety | 20 | 15 | Input and MDS identity validation, install-mock, device inventory guard, scoped KVM cleanup, and CephFS client safety have evidence; physical-device safety and check-mode coverage remain limited. |
-| Convergence and recovery | 13 | 10 | KVM repeat convergence produced zero changes; failure recovery and accurate changed reporting remain unverified. |
-| Automated testing and CI | 25 | 22 | Validation, install-mock (including MDS identity cases), production lint, example syntax, and live KVM evidence exist; lifecycle/failure and Rocky 9 live coverage remain gaps. CI result enforcement at this ref remains unverified. |
-| Documentation and release hygiene | 10 | 7 | README, testing guidance and roadmap updated with accurate evidence and limitations; release and upgrade guidance remain incomplete. |
-| **Total** | **100** | **81** | **Beta** |
+| Scope and public contract | 12 | 12 | Blueprint, states, inputs, platforms and dependencies documented; broad platform/dependency compatibility is not implied by the scoped runs. |
+| Functional completeness | 20 | 17 | Rocky 9 and 10 KVM runs verified the principal CephFS workflow and controlled host-add failure/retry; arbitrary interrupted-run recovery and unclaimed lifecycle transitions remain outside verified coverage. |
+| Validation and safety | 20 | 14.5 | Input and MDS identity validation, mock device guard, owned-disk KVM runs and scoped cleanup have evidence; physical-device safety, check-mode and independent ISO signature verification remain limited. |
+| Convergence and recovery | 13 | 10.5 | Supervised repeat convergence reported zero changes on three guests per platform; controlled host-add retry passed, but arbitrary partial-application recovery and reliable MON/MGR/OSD changed reporting remain unverified. |
+| Automated testing and CI | 25 | 22 | Podman validation/mock, lint/syntax and supervised three-node KVM on Rocky 9 and 10 have evidence; CI result enforcement, broader compatibility and general failure/recovery coverage remain gaps. |
+| Documentation and release hygiene | 10 | 9 | README, testing guidance, contribution contract and roadmap record scoped evidence and limitations; the corrected documentation inventory passed validation-only verification, while release/upgrade guidance remains incomplete. |
+| **Total** | **100** | **85** | **Beta** |
 
-## Evidence at assessed commit
+## Prior 81% assessment (historical)
 
 At assessed commit `a607c7f63ba2e93761ea94ed03e1025d8bc4fe7d` on
 `update/cephfs-support`, bootstrap pins to the official Tentacle image
@@ -35,7 +35,8 @@ and active MDS, client credentials and persistent kernel mounts on declared
 clients, including cross-node mounts. Cleanup removed scenario guests, disks,
 OSDs and mounts while preserving shared resources. It ran with shared
 environment HEAD `b6b56db`, Ansible Core 2.20.8 and Molecule 26.8.0. Validation,
-install-mock, production lint and example syntax also passed. This evidence
+podman-install-mock, production lint and example syntax also passed under the
+scenario's former name. This evidence
 does not demonstrate failure/recovery, upgrade/removal, or Rocky 9 live support;
 Rocky 9 remains unsupported by live evidence. CI result enforcement at this ref
 is unverified. None of this evidence establishes production suitability.
@@ -49,9 +50,28 @@ The role installs bootstrap prerequisites and the official cephadm executable
 from the pinned `rpm-20.2.4/el9/noarch/cephadm` source URL on the designated
 bootstrap host. It uses the pinned container image for daemon version selection.
 
-Rocky 9 live-cluster behavior remains untested. Rocky 10 has a successful KVM
-run, but this does not establish broad platform support; the role consumes an
-upstream EL9 cephadm artifact on Rocky 10, whose compatibility remains a caveat.
+At this historical assessed commit, Rocky 9 live-cluster behavior was untested.
+Rocky 10 had a successful custom KVM run, but this did not establish broad
+platform support; the role consumes an upstream EL9 cephadm artifact on Rocky
+10, whose compatibility remains a caveat.
+
+## Supervised KVM evidence (included in current scorecard)
+
+On `update/ceph-kvm-recovery-tests`, supervised `kvm-ceph` runs passed and
+cleaned on Rocky 9 (`613a2ea1-8486-46a4-aeef-f1da535a4de0`) and Rocky 10
+(`ba66c9ce-be15-42a5-b151-fee0b135a66d`). Each verified a root-only ISO
+installation guard, a serial-qualified owned OSD device reported in Ceph
+inventory, controlled `ceph-b` host-add failure and successful retry, three
+monitors and three OSDs up/in, manager and CephFS cross-node persistent mounts,
+and `changed=0` on all three guests at idempotence. Both supervisors reported
+zero owned guest/network records after cleanup; Rocky 10 `virsh` guest/network
+listings were also empty. Official HTTPS ISO hashes matched checksum files,
+but the checksum files were not signature-verified. Two older pre-policy
+resources remain retained outside these runs. This evidence closes the
+previously untested managed-sequence and Rocky 9 live-run claims, not the
+broader device-safety, arbitrary or interrupted-run recovery, upgrade/removal,
+changed-reporting, CI-enforcement or production-readiness gaps. See
+[TESTING.md](../TESTING.md).
 
 ## Milestones and acceptance gates
 
@@ -63,7 +83,8 @@ mock is useful for command contract testing but cannot substitute for a cluster.
    JSON service specs, and exercise two install passes. Verify local bootstrap
    and pool guards, and accurately report task changes. Never mock device
    discovery/safety, claim OSD data safety, quorum, or HA. This is a narrow
-   functional test only. Validation and install-mock passed at assessed HEAD;
+   functional test only. Validation and podman-install-mock passed at assessed HEAD
+   under their former scenario names;
    these are not evidence of true idempotence or live Ceph behavior.
 2. **Command/change semantics:** capture actual `ceph orch apply` effects or
    expose a reliable comparison workflow before claiming changed-state
@@ -105,8 +126,10 @@ regressions.
 ## Evidence limitation
 
 Mocks can validate argument construction, generated specs, and guards. The
-successful KVM run provides real cluster convergence and scoped cleanup evidence,
-but does not establish disk eligibility/data safety, failure recovery, upgrade
-or removal behavior, or accurate changed reporting. Production-like evidence
-and Rocky 9 live testing remain absent; these are required before recommending
-production use or assigning Stable/Mature status.
+historical and newer supervised KVM runs provide real cluster convergence and
+scoped cleanup evidence; the latter also verify controlled host-add failure
+recovery on Rocky 9 and 10. They do not establish physical-device
+eligibility/data safety, arbitrary interrupted-run recovery, upgrade or
+removal behavior, or accurate changed reporting. Production-like evidence
+remains absent; these gaps preclude recommending production use or assigning
+Stable/Mature status.

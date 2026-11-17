@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "scenarios": {
+    "podman-validation": {
+      "title": "Blueprint validation",
+      "description": "Verify accepted and rejected Ceph blueprints without mutation."
+    },
+    "podman-install-mock": {
+      "title": "Mocked Ceph install",
+      "description": "Check Ceph install commands and repeated convergence using mocked services."
+    },
+    "kvm-ceph": {
+      "title": "Ceph cluster recovery",
+      "description": "Exercise a disposable three-node Ceph cluster and controlled recovery."
+    }
+  }
+}

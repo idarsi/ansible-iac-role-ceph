@@ -14,6 +14,9 @@
             monitors: ["ceph-a", "ceph-b", "ceph-c"]
             cluster_network: "10.20.0.0/24"
             ssh_user: "root"
+            # This example runs validate only. Opt-in does not prove disk safety;
+            # verify device ownership independently before any install.
+            allow_osd_provisioning: true
             osds:
               - { host: "ceph-osd-a", device: "/dev/sdb" }
             pools: []

@@ -29,7 +29,7 @@ provisioner:
 dependency:
   name: galaxy
   options:
-    requirements-file: requirements.yml
+    requirements-file: molecule/podman-install-mock/requirements.yml
 verifier:
   name: ansible
 scenario:

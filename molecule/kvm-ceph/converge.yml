@@ -4,24 +4,22 @@
   become: true
   gather_facts: false
   tasks:
-    - name: Wait for the scenario OSD disk to appear in each guest
+    - name: Resolve and verify the owned OSD disk by its virtio serial
       ansible.builtin.shell: |
         set -euo pipefail
         udevadm settle --timeout=30
-        expected_serial="idarsi-{{ disk_suffix }}-{{ inventory_hostname | regex_replace('^ceph-', '') }}"
-        for attempt in $(seq 1 60); do
-          if test -b /dev/vdb && udevadm info --query=property --name=/dev/vdb | grep -Fxq "ID_SERIAL=${expected_serial}"; then
-            exit 0
-          fi
-          sleep 2
-        done
-        echo "Scenario disk attachment mismatch in guest {{ inventory_hostname }}: /dev/vdb is not the expected scenario-owned disk (serial=${expected_serial})" >&2
-        exit 1
+        disk=$(readlink -e /dev/disk/by-id/virtio-itr-osd1)
+        [[ "$disk" =~ ^/dev/[a-zA-Z0-9_-]+$ ]] && test -b "$disk"
+        udevadm info --query=property --name="$disk" | grep -Fxq 'ID_SERIAL=itr-osd1'
+        printf '%s\n' "$disk"
       args:
         executable: /bin/bash
-      vars:
-        disk_suffix: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') | hash('sha256') | truncate(8, true, '') }}"
+      register: ceph_owned_osd_disk
       changed_when: false
+
+    - name: Publish the verified inventory device path for the cluster blueprint
+      ansible.builtin.set_fact:
+        ceph_test_osd_device: "{{ ceph_owned_osd_disk.stdout }}"
 
     - name: Set guest hostname to its inventory name
       ansible.builtin.hostname:
@@ -46,13 +44,13 @@
       ceph:
         cluster_name: "ceph"
         monitors: ["ceph-a", "ceph-b", "ceph-c"]
-        cluster_network: "192.168.250.0/24"
+        cluster_network: "{{ ceph_test_cluster_network }}"
         ssh_user: "molecule"
         allow_osd_provisioning: true
         osds:
-          - { host: "ceph-a", device: "/dev/vdb" }
-          - { host: "ceph-b", device: "/dev/vdb" }
-          - { host: "ceph-c", device: "/dev/vdb" }
+          - { host: "ceph-a", device: "{{ hostvars['ceph-a'].ceph_test_osd_device }}" }
+          - { host: "ceph-b", device: "{{ hostvars['ceph-b'].ceph_test_osd_device }}" }
+          - { host: "ceph-c", device: "{{ hostvars['ceph-c'].ceph_test_osd_device }}" }
         pools:
           - { name: "molecule-integration", pg_num: 32 }
         filesystems:
@@ -61,7 +59,158 @@
           - { host: "ceph-a", filesystem: "molecule-cephfs", mountpoint: "/mnt/molecule-cephfs", client_id: "molecule-mount-a" }
           - { host: "ceph-b", filesystem: "molecule-cephfs", mountpoint: "/mnt/molecule-cephfs", client_id: "molecule-mount-b" }
           - { host: "ceph-c", filesystem: "molecule-cephfs", mountpoint: "/mnt/molecule-cephfs", client_id: "molecule-mount-c" }
+  pre_tasks:
+    - name: Require the isolated Galaxy collection pin before Ceph changes
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import json
+            import os
+            from pathlib import Path
+            import sys
+
+            private = Path(sys.argv[1], "collections").resolve()
+            paths = os.environ.get("ANSIBLE_COLLECTIONS_PATH", "").split(":")
+            if not paths or Path(paths[0]).resolve() != private:
+                raise SystemExit("Managed run collections must precede shared collections")
+            manifest = private / "ansible_collections/ansible/posix/MANIFEST.json"
+            with manifest.open(encoding="utf-8") as stream:
+                version = json.load(stream)["collection_info"]["version"]
+            if version != "2.1.0":
+                raise SystemExit("Managed run requires ansible.posix 2.1.0")
+          - "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+
+    - name: Require guest addresses to match the supervisor's allocated /24
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import ipaddress
+            import json
+            import os
+            from pathlib import Path
+            import pwd
+            import sys
+            import uuid
+
+            addresses = [ipaddress.ip_address(value) for value in sys.argv[1:4]]
+            networks = {ipaddress.ip_network(f"{address}/24", strict=False) for address in addresses}
+            if (len(addresses) != 3 or len(set(addresses)) != 3
+                    or any(not address.is_private for address in addresses)
+                    or len(networks) != 1):
+                raise SystemExit("Ceph guests need three distinct private addresses in one /24")
+            run_id = sys.argv[4]
+            if str(uuid.UUID(run_id)) != run_id:
+                raise SystemExit("Missing or invalid supervised run identity")
+            path = Path(pwd.getpwuid(os.getuid()).pw_dir) / ".idarsi-test-runs" / run_id / "manifest.json"
+            with path.open(encoding="utf-8") as stream:
+                manifest = json.load(stream)
+            network = networks.pop()
+            if (manifest["id"] != run_id or manifest["backend"] != "kvm"
+                    or manifest["status"] != "running" or not manifest["network"]
+                    or manifest["subnet"] != str(network)):
+                raise SystemExit("Guest addresses differ from the supervisor's private network lease")
+            print(network)
+          - "{{ hostvars['ceph-a'].ansible_host }}"
+          - "{{ hostvars['ceph-b'].ansible_host }}"
+          - "{{ hostvars['ceph-c'].ansible_host }}"
+          - "{{ lookup('env', 'IDARSI_RUN_ID') }}"
+      delegate_to: localhost
+      become: false
+      register: ceph_allocated_subnet
+      changed_when: false
+
+    - name: Set the validated Ceph cluster subnet
+      ansible.builtin.set_fact:
+        ceph_test_cluster_network: "{{ ceph_allocated_subnet.stdout }}"
   tasks:
-    - name: Run Ceph role integration convergence
+    - name: Check whether recovery already succeeded on this guest
+      ansible.builtin.stat:
+        path: /var/lib/idarsi-ceph-recovery-complete
+      register: ceph_recovery_marker
+
+    - name: Exercise recovery after a controlled late install failure
+      when: not ceph_recovery_marker.stat.exists
+      block:
+        - name: Create scenario-specific interceptor directory
+          ansible.builtin.tempfile:
+            path: /var/tmp
+            prefix: idarsi-ceph-host-add-
+            state: directory
+          register: ceph_interceptor_dir
+
+        - name: Install a scenario-local cephadm host-add interceptor
+          ansible.builtin.copy:
+            dest: "{{ ceph_interceptor_dir.path }}/cephadm"
+            owner: root
+            group: root
+            mode: "0755"
+            content: |
+              #!/bin/bash
+              set -euo pipefail
+              if [[ "$#" -eq 8 && "$1" == shell && "$2" == -- && "$3" == ceph && "$4" == orch && "$5" == host && "$6" == add && "$7" == ceph-b && "$8" == {{ hostvars['ceph-b'].ansible_host | quote }} ]]; then
+                printf '%s\n' "$@" >> {{ (ceph_interceptor_dir.path ~ '/intercept.log') | quote }}
+                exit 73
+              fi
+              exec /usr/sbin/cephadm "$@"
+
+        - name: Run first valid install and inject failure at host registration
+          environment:
+            PATH: "{{ ceph_interceptor_dir.path }}:{{ ansible_env.PATH }}"
+          block:
+            - name: Run role install with the scenario-local interceptor first in PATH
+              ansible.builtin.include_role:
+                name: "{{ playbook_dir }}/../.."
+
+        - name: Reject a first install that did not trigger the injection
+          ansible.builtin.fail:
+            msg: "The controlled host-add failure was not injected."
+      rescue:
+        - name: Require failure from the injected host-add command
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.results is defined
+              - ceph_injected_failures | length == 1
+              - ceph_injected_failures[0].rc == 73
+              - ceph_injected_failures[0].cmd == ['cephadm', 'shell', '--', 'ceph', 'orch', 'host', 'add', 'ceph-b', hostvars['ceph-b'].ansible_host]
+            fail_msg: "The controlled recovery attempt failed for an unexpected reason."
+          vars:
+            ceph_injected_failures: "{{ ansible_failed_result.results | default([]) | selectattr('failed', 'defined') | selectattr('failed') | list }}"
+
+        - name: Verify bootstrap sentinel, SSH key, and wrapper invocation
+          ansible.builtin.shell: |
+            set -euo pipefail
+            test -s /etc/ceph/ceph.conf
+            test -s /etc/ceph/ceph.pub
+            test -s {{ (ceph_interceptor_dir.path ~ '/intercept.log') | quote }}
+          args:
+            executable: /bin/bash
+          changed_when: false
+
+      always:
+        - name: Remove scenario-local cephadm wrapper
+          ansible.builtin.file:
+            path: "{{ ceph_interceptor_dir.path }}"
+            state: absent
+          when:
+            - ceph_interceptor_dir is defined
+            - ceph_interceptor_dir.path is defined
+
+    - name: Run identical valid Ceph role install after recovery
       ansible.builtin.include_role:
         name: "{{ playbook_dir }}/../.."
+
+    - name: Record successful recovery only after the normal install succeeds
+      ansible.builtin.copy:
+        dest: /var/lib/idarsi-ceph-recovery-complete
+        content: "Controlled host-add failure and normal retry succeeded.\n"
+        owner: root
+        group: root
+        mode: "0600"
+      when: not ceph_recovery_marker.stat.exists
