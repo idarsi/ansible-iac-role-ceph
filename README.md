@@ -2,7 +2,7 @@
 >
 > **RC Readiness: 85%**
 >
-> **Assessment ref:** `update/ceph-kvm-recovery-tests` (this change, based on `ba0b270`; supervised evidence from 2026-11-16). The 85% Beta reassessment includes supervised Rocky 9 and 10 KVM recovery sequences with scoped cleanup and validation-only verification of the linked example. See [TESTING.md](TESTING.md) for evidence and limitations.
+> **Assessment ref:** `update/ceph-kvm-recovery-tests` (this change, based on `0ebdb13`; supervised TUI evidence 2026-11-17). The 85% Beta reassessment includes supervised Rocky 9 and 10 KVM recovery sequences, plus a Rocky 10 TUI run where `ansible-min` was SKIPPED and `ansible-current`/`ansible-next` passed with scoped cleanup. The linked example passed validation-only verification. This is not production certification or CI enforcement; see [TESTING.md](TESTING.md) for evidence and limitations.
 
 ANSIBLE-IAC-ROLE-CEPH
 ===============================

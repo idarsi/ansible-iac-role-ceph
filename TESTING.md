@@ -116,12 +116,22 @@ collection resolution, but both supervised runs used the effective private
 `ansible.posix` 2.1.0 collection.
 `ansible-min` Core 2.15 is below this role's 2.19 minimum. Do not install
 into the shared environment from this role.
+The TUI opts only `kvm-ceph` into the managed runner; Podman scenarios still
+use direct Molecule. Its Core 2.19 minimum matches `meta/main.yml`. In one
+Rocky 10 ISO TUI run (PARTIAL, exit 0), `ansible-min` Core 2.15 was SKIPPED
+without starting a runner, not passed or failed. `ansible-current` Core 2.20.8
+PASSED (run `267300fe-1e93-4f91-85b3-53ec0d670b93`); `ansible-next`
+Core 2.21.3 PASSED (run `121a619f-cb72-4dd3-b304-b3c081927a5a`). Both
+managed runs verified the private `ansible.posix` 2.1.0 pin, injected recovery,
+CephFS cross-node access, and idempotence with `changed=0` on all three hosts.
+Both cleaned with zero owned guest/network records in their manifests; this
+does not establish that unrelated host resources are absent.
 
 The live KVM scenario is deliberately excluded from PR/push CI. It is a
 manual/scheduled heavy test requiring libvirt/KVM, an available Rocky Linux ISO,
 and disposable storage. The managed supervisor in shared test-environments
-main `96d6c57` passed the two scoped runs above; broader runtime acceptance
-remains open. After
+main `96d6c57` passed the earlier supervised Rocky 9 and Rocky 10 runs;
+broader runtime acceptance remains open. After
 activating a compatible existing pinned environment, run from the role checkout
 with a reviewed Rocky 10 ISO:
 

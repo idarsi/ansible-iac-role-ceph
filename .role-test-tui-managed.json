@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "scenarios": {
+    "kvm-ceph": {
+      "backend": "kvm",
+      "min_ansible_core": "2.19"
+    }
+  }
+}
