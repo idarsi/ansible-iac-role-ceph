@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "scenarios": {
+    "podman-validation": {
+      "title": "Blueprint validation",
+      "description": "Verify accepted and rejected Ceph blueprints without mutation.",
+      "environments": {
+        "ansible-min": {
+          "unsupported_reason": "Ansible Core 2.15 is below the role's required minimum 2.19."
+        },
+        "ansible-current": {"platforms": ["ceph-validation"]},
+        "ansible-next": {"platforms": ["ceph-validation"]}
+      }
+    },
+    "podman-install-mock": {
+      "title": "Mocked Ceph install",
+      "description": "Check Ceph install commands and repeated convergence using mocked services.",
+      "environments": {
+        "ansible-min": {
+          "unsupported_reason": "Ansible Core 2.15 is below the role's required minimum 2.19."
+        },
+        "ansible-current": {"platforms": ["ceph-install-mock"]},
+        "ansible-next": {"platforms": ["ceph-install-mock"]}
+      }
+    },
+    "kvm-ceph": {
+      "title": "Ceph cluster recovery",
+      "description": "Exercise a disposable three-node Ceph cluster and controlled recovery.",
+      "execution": {"backend": "kvm", "min_ansible_core": "2.19"},
+      "environments": {
+        "ansible-min": {
+          "unsupported_reason": "Ansible Core 2.15 is below the role's required minimum 2.19."
+        },
+        "ansible-current": {"platforms": ["ceph-a", "ceph-b", "ceph-c"]},
+        "ansible-next": {"platforms": ["ceph-a", "ceph-b", "ceph-c"]}
+      }
+    }
+  }
+}

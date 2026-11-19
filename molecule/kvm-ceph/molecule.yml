@@ -5,6 +5,8 @@ dependency:
 
 driver:
   name: default
+  safe_files:
+    - "${MOLECULE_EPHEMERAL_DIRECTORY}/collections/*"
   options:
     managed: true
 
@@ -42,6 +44,7 @@ platforms:
 
 provisioner:
   env:
+    IDARSI_MOLECULE_BACKEND: "kvm"
     ANSIBLE_SSH_ARGS: "-F /dev/null -o ControlMaster=no -o ControlPath=none -o ControlPersist=no"
     ANSIBLE_FILTER_PLUGINS: "${MOLECULE_PROJECT_DIRECTORY}/filter_plugins"
     ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_EPHEMERAL_DIRECTORY}/collections:${ANSIBLE_COLLECTIONS_PATH}"

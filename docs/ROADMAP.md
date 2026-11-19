@@ -2,12 +2,22 @@
 
 ## Current reassessment
 
-The reassessment of `update/ceph-kvm-recovery-tests` (this change, based on
-`ba0b270`; supervised evidence from 2026-11-16) is **Beta / 85% RC
-Readiness**. The linked example passed local validation-only verification.
-The score is an engineering evidence score, not a production-suitability rating.
-The scorecard includes both supervised Rocky 9 and Rocky 10 runs; planned work
-earns no points.
+The reassessment of the `update/portable-molecule-testing` working tree, based on
+`d47f2d099dba4d3b3b254754309dd2c60f4d1181`, retains **Beta / 85% RC
+Readiness**, with evidence dated 2026-11-19. The score is an engineering evidence
+score, not a production-suitability rating. Existing supervised Rocky 9/10 runs
+and example validation remain historical evidence. The new plain direct Rocky
+10/current-controller Molecule sequence passed, including collection
+preservation, controlled retry, idempotence, live verification and scoped cleanup.
+New Rocky 9, next-controller and supervised lifecycle acceptance remain pending.
+Planned work earns no points. The prior README cited `0ebdb13` and evidence
+from 2026-11-17; the prior roadmap cited `ba0b270` and 2026-11-16. Those are
+historical provenance, not fresh test runs of this implementation.
+
+The base's quick CI run `44056810198` passed; target-branch CI success is not
+claimed. Branch protection and repository rules are absent, so CI enforcement
+earns zero, not a pending/failing-run score. Every criterion multiplier and
+category subtotal is unchanged: 12 / 17 / 14.5 / 10.5 / 22 / 9 = 85.
 
 | Score area | Maximum | Current | Evidence and gap |
 |---|---:|---:|---|
@@ -15,9 +25,28 @@ earns no points.
 | Functional completeness | 20 | 17 | Rocky 9 and 10 KVM runs verified the principal CephFS workflow and controlled host-add failure/retry; arbitrary interrupted-run recovery and unclaimed lifecycle transitions remain outside verified coverage. |
 | Validation and safety | 20 | 14.5 | Input and MDS identity validation, mock device guard, owned-disk KVM runs and scoped cleanup have evidence; physical-device safety, check-mode and independent ISO signature verification remain limited. |
 | Convergence and recovery | 13 | 10.5 | Supervised repeat convergence reported zero changes on three guests per platform; controlled host-add retry passed, but arbitrary partial-application recovery and reliable MON/MGR/OSD changed reporting remain unverified. |
-| Automated testing and CI | 25 | 22 | Podman validation/mock, lint/syntax and supervised three-node KVM on Rocky 9 and 10 have evidence; CI result enforcement, broader compatibility and general failure/recovery coverage remain gaps. |
+| Automated testing and CI | 25 | 22 | Podman validation/mock, lint/syntax and supervised three-node KVM on Rocky 9 and 10 have evidence; required-check enforcement is absent despite passing base CI. Broader compatibility and general failure/recovery coverage remain gaps. |
 | Documentation and release hygiene | 10 | 9 | README, testing guidance, contribution contract and roadmap record scoped evidence and limitations; the corrected documentation inventory passed validation-only verification, while release/upgrade guidance remains incomplete. |
 | **Total** | **100** | **85** | **Beta** |
+
+Criterion-level reconstruction of the retained score (not a recovered historical
+criterion ledger), in the maturity rubric's order:
+
+| Area | Awarded criterion points |
+|---|---|
+| Scope | Purpose 3; inputs/states 5; support 4 |
+| Functional | Core 8; applicable lifecycle 6; platform/dependencies 1.5; failure/rerun 1.5 |
+| Validation | Preflight 6; secure behavior 6; destructive guardrails 2.5; check/diff 0 |
+| Recovery | Idempotence 2.5; applicable transitions 4; operational recovery 4 (narrow controlled host-add retry only, not arbitrary interruption) |
+| Testing | Static 3; validation 4; functional 6; idempotence 4; lifecycle/guardrails 2; platforms 3; CI enforcement 0 |
+| Documentation | Operator 4; tests/limitations 2; contribution 2; release metadata 1 |
+
+Remaining RC blockers include check/diff behavior, accurate MON/MGR/OSD changed
+reporting, physical-device eligibility and TOCTOU safety, broader interruption
+guardrails, dependency compatibility, enforced CI and release policy.
+Unsupported removal and upgrade features are not required merely to raise the
+score. Significant coverage gaps cap the state at Beta; production approval
+has not been established.
 
 ## Prior 81% assessment (historical)
 
@@ -133,3 +162,25 @@ eligibility/data safety, arbitrary interrupted-run recovery, upgrade or
 removal behavior, or accurate changed reporting. Production-like evidence
 remains absent; these gaps preclude recommending production use or assigning
 Stable/Mature status.
+
+## Direct lifecycle acceptance (2026-11-19)
+
+Plain `molecule test -s kvm-ceph` passed without an outer runner on three Rocky
+10 guests, using Python 3.12.16, Ansible Core 2.20.8, Molecule 26.8.0 and the
+updated shared helpers selected through `IDARSI_TEST_ENVIRONMENT`. Dependency,
+initial destroy, syntax, create, converge, idempotence, verify and final destroy
+passed. Private `ansible.posix` 2.1.0 installation survived initial
+destroy/pruning and remained pinned after final pruning. Controlled host-add
+rescue/retry succeeded, with subsequent `changed=0` on all three guests.
+Verification covered quorum, MGR, OSD/pool/health, active CephFS, persistent
+client mounts and cross-node access. Final inspection confirmed zero owned
+guests/network, sealed create/destroy operations, no active generation and
+preservation of pre-existing foreign resources.
+
+This closes the pending direct Rocky 10/current-controller acceptance claim,
+not the separate new Rocky 9, next-controller or supervised acceptance claims.
+Shared supervised-admission fixes remain separately gated. There is meaningful
+functional and idempotence evidence, so no Alpha cap applies; remaining
+coverage gaps retain the Beta cap and no production approval is established.
+The score remains 85; successful scoped acceptance is not an automatic score
+increase.

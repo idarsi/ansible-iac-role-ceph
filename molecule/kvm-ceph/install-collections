@@ -1,23 +1,15 @@
 #!/usr/bin/env python3
-"""Install scenario collections only inside a validated supervised run."""
+"""Install scenario collections only inside the shared validated context."""
 
-import json
+from contextlib import contextmanager
+import fcntl
 import os
 from pathlib import Path
-import pwd
-import re
 import stat
 import subprocess
 import sys
-import uuid
 
-
-def private_directory(path: Path) -> None:
-    """Reject links, foreign owners and writable or substituted run directories."""
-    info = path.lstat()
-    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
-            or stat.S_IMODE(info.st_mode) != 0o700):
-        raise ValueError(f"Untrusted run directory: {path}")
+from scenario_context import context, owned_directory
 
 
 def check_existing_tree(root: Path) -> None:
@@ -36,69 +28,61 @@ def check_existing_tree(root: Path) -> None:
                 (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1)
             ):
                 raise ValueError(f"Untrusted collections entry: {child}")
+            if stat.S_IMODE(info.st_mode) & 0o022:
+                raise ValueError(f"Writable collections entry: {child}")
             if stat.S_ISDIR(info.st_mode):
-                if stat.S_IMODE(info.st_mode) & 0o022:
-                    raise ValueError(f"Writable collections directory: {child}")
                 pending.append(child)
 
 
-def validated_destination(env: dict, home: Path, role: Path) -> Path:
-    """Require the exact trusted journal and disposable path before any install."""
-    run_id = env.get("IDARSI_RUN_ID", "")
-    if not re.fullmatch(r"[0-9a-f-]{36}", run_id) or str(uuid.UUID(run_id)) != run_id:
-        raise ValueError("Missing or invalid managed run ID")
-    state = home / ".idarsi-test-runs"
-    run = state / run_id
-    expected = state / ".work" / run_id / "ephemeral"
-    raw = env.get("MOLECULE_EPHEMERAL_DIRECTORY", "")
-    if not raw or not Path(raw).is_absolute() or raw != str(expected):
-        raise ValueError("Ephemeral directory must be this supervised run's private path")
+@contextmanager
+def collection_lock(ephemeral: Path):
+    """Serialize private collection writes without following a lock-file link."""
+    descriptor = os.open(
+        ephemeral / ".ceph-collections.lock",
+        os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK,
+        0o600,
+    )
+    try:
+        info = os.fstat(descriptor)
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1):
+            raise ValueError("Untrusted collections lock")
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield
+    finally:
+        os.close(descriptor)
+
+
+def validated_destination(env: dict, role: Path) -> Path:
+    """Resolve effective identity without allocating a generation or resources."""
     if Path.cwd().resolve() != role.resolve():
         raise ValueError("Install collections only from the role checkout")
-    for directory in (state, run, state / ".work", expected.parent, expected):
-        private_directory(directory)
-    manifest_path = run / "manifest.json"
-    info = manifest_path.lstat()
-    if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
-            or stat.S_IMODE(info.st_mode) != 0o600):
-        raise ValueError("Untrusted managed run manifest")
-    with manifest_path.open(encoding="utf-8") as stream:
-        manifest = json.load(stream)
-    if (manifest.get("id") != run_id or manifest.get("uid") != os.getuid()
-            or manifest.get("backend") != "kvm" or manifest.get("scenario") != "kvm-ceph"
-            or manifest.get("status") != "running" or manifest.get("role") != str(role.resolve())):
-        raise ValueError("Managed run manifest does not authorize this scenario")
-    destination = expected / "collections"
-    try:
-        destination.mkdir(mode=0o700)
-    except FileExistsError:
-        pass
-    private_directory(destination)
-    check_existing_tree(destination)
-    return destination
+    return Path(context("resolve", env, role)["collections_directory"])
 
 
 def main() -> int:
     role = Path(__file__).resolve().parents[2]
     try:
-        destination = validated_destination(
-            os.environ, Path(pwd.getpwuid(os.getuid()).pw_dir), role,
-        )
-        inherited = os.environ.get("ANSIBLE_COLLECTIONS_PATH", "")
-        galaxy_env = dict(
-            os.environ,
-            ANSIBLE_COLLECTIONS_PATH=str(destination) + (":" + inherited if inherited else ""),
-        )
-        subprocess.run(
-            ["ansible-galaxy", "collection", "install", "-r",
-             "molecule/kvm-ceph/requirements.yml", "--collections-path",
-            str(destination), "--force"],
-            check=True,
-            env=galaxy_env,
-        )
-    except (ValueError, OSError, KeyError, json.JSONDecodeError,
+        destination = validated_destination(dict(os.environ), role)
+        with collection_lock(destination.parent):
+            destination.mkdir(mode=0o700, exist_ok=True)
+            owned_directory(destination)
+            check_existing_tree(destination)
+            inherited = os.environ.get("ANSIBLE_COLLECTIONS_PATH", "")
+            galaxy_env = dict(
+                os.environ,
+                ANSIBLE_COLLECTIONS_PATH=str(destination) + (":" + inherited if inherited else ""),
+            )
+            subprocess.run(
+                ["ansible-galaxy", "collection", "install", "-r",
+                 "molecule/kvm-ceph/requirements.yml", "--collections-path",
+                 str(destination), "--force"],
+                check=True,
+                env=galaxy_env,
+            )
+    except (ValueError, OSError, KeyError, TypeError,
             subprocess.CalledProcessError) as error:
-        print(f"Refusing unsafe or failed managed Galaxy install: {error}", file=sys.stderr)
+        print(f"Refusing unsafe or failed context Galaxy install: {error}", file=sys.stderr)
         return 1
     return 0
 
