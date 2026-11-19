@@ -2,7 +2,7 @@
 >
 > **RC Readiness: 85%**
 >
-> **Assessment ref:** `update/ceph-kvm-recovery-tests` (this change, based on `0ebdb13`; supervised TUI evidence 2026-11-17). The 85% Beta reassessment includes supervised Rocky 9 and 10 KVM recovery sequences, plus a Rocky 10 TUI run where `ansible-min` was SKIPPED and `ansible-current`/`ansible-next` passed with scoped cleanup. The linked example passed validation-only verification. This is not production certification or CI enforcement; see [TESTING.md](TESTING.md) for evidence and limitations.
+> **Assessment ref:** `update/portable-molecule-testing` working tree, based on `d47f2d099dba4d3b3b254754309dd2c60f4d1181`; evidence dated 2026-11-19. Beta / 85% is retained. Plain direct `molecule test -s kvm-ceph` passed on three Rocky 10 guests under Core 2.20.8, including private collection preservation, controlled host-add retry, zero-change idempotence, CephFS verification and scoped cleanup. New Rocky 9, next-controller and supervised lifecycle acceptance remain pending; older evidence is recorded separately. Base CI passed, but required-check enforcement is absent and target-branch CI is not claimed. Coverage gaps still cap maturity at Beta; no production approval is established. See [TESTING.md](TESTING.md) and [the scorecard](docs/ROADMAP.md).
 
 ANSIBLE-IAC-ROLE-CEPH
 ===============================

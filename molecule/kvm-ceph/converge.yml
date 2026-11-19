@@ -1,8 +1,36 @@
 ---
+###############################################################################
+#
+# converge.yml
+#
+# @author Arsi Atomi
+#
+###############################################################################
+
 - name: Prepare disposable Ceph guests
   hosts: all
   become: true
   gather_facts: false
+  pre_tasks:
+    - name: "Validate the shared context, private collection pin and cluster addresses before guest changes"
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/scenario_context.py"
+          - "{{ hostvars['ceph-a'].ansible_host }}"
+          - "{{ hostvars['ceph-b'].ansible_host }}"
+          - "{{ hostvars['ceph-c'].ansible_host }}"
+      delegate_to: localhost
+      become: false
+      run_once: true
+      register: ceph_allocated_subnet
+      changed_when: false
+
+    - name: "Set the validated Ceph cluster subnet"
+      ansible.builtin.set_fact:
+        ceph_test_cluster_network: "{{ ceph_allocated_subnet.stdout }}"
+      run_once: true
+
   tasks:
     - name: Resolve and verify the owned OSD disk by its virtio serial
       ansible.builtin.shell: |
@@ -59,76 +87,6 @@
           - { host: "ceph-a", filesystem: "molecule-cephfs", mountpoint: "/mnt/molecule-cephfs", client_id: "molecule-mount-a" }
           - { host: "ceph-b", filesystem: "molecule-cephfs", mountpoint: "/mnt/molecule-cephfs", client_id: "molecule-mount-b" }
           - { host: "ceph-c", filesystem: "molecule-cephfs", mountpoint: "/mnt/molecule-cephfs", client_id: "molecule-mount-c" }
-  pre_tasks:
-    - name: Require the isolated Galaxy collection pin before Ceph changes
-      ansible.builtin.command:
-        argv:
-          - python3
-          - -c
-          - |
-            import json
-            import os
-            from pathlib import Path
-            import sys
-
-            private = Path(sys.argv[1], "collections").resolve()
-            paths = os.environ.get("ANSIBLE_COLLECTIONS_PATH", "").split(":")
-            if not paths or Path(paths[0]).resolve() != private:
-                raise SystemExit("Managed run collections must precede shared collections")
-            manifest = private / "ansible_collections/ansible/posix/MANIFEST.json"
-            with manifest.open(encoding="utf-8") as stream:
-                version = json.load(stream)["collection_info"]["version"]
-            if version != "2.1.0":
-                raise SystemExit("Managed run requires ansible.posix 2.1.0")
-          - "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}"
-      delegate_to: localhost
-      become: false
-      changed_when: false
-
-    - name: Require guest addresses to match the supervisor's allocated /24
-      ansible.builtin.command:
-        argv:
-          - python3
-          - -c
-          - |
-            import ipaddress
-            import json
-            import os
-            from pathlib import Path
-            import pwd
-            import sys
-            import uuid
-
-            addresses = [ipaddress.ip_address(value) for value in sys.argv[1:4]]
-            networks = {ipaddress.ip_network(f"{address}/24", strict=False) for address in addresses}
-            if (len(addresses) != 3 or len(set(addresses)) != 3
-                    or any(not address.is_private for address in addresses)
-                    or len(networks) != 1):
-                raise SystemExit("Ceph guests need three distinct private addresses in one /24")
-            run_id = sys.argv[4]
-            if str(uuid.UUID(run_id)) != run_id:
-                raise SystemExit("Missing or invalid supervised run identity")
-            path = Path(pwd.getpwuid(os.getuid()).pw_dir) / ".idarsi-test-runs" / run_id / "manifest.json"
-            with path.open(encoding="utf-8") as stream:
-                manifest = json.load(stream)
-            network = networks.pop()
-            if (manifest["id"] != run_id or manifest["backend"] != "kvm"
-                    or manifest["status"] != "running" or not manifest["network"]
-                    or manifest["subnet"] != str(network)):
-                raise SystemExit("Guest addresses differ from the supervisor's private network lease")
-            print(network)
-          - "{{ hostvars['ceph-a'].ansible_host }}"
-          - "{{ hostvars['ceph-b'].ansible_host }}"
-          - "{{ hostvars['ceph-c'].ansible_host }}"
-          - "{{ lookup('env', 'IDARSI_RUN_ID') }}"
-      delegate_to: localhost
-      become: false
-      register: ceph_allocated_subnet
-      changed_when: false
-
-    - name: Set the validated Ceph cluster subnet
-      ansible.builtin.set_fact:
-        ceph_test_cluster_network: "{{ ceph_allocated_subnet.stdout }}"
   tasks:
     - name: Check whether recovery already succeeded on this guest
       ansible.builtin.stat:
